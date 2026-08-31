@@ -233,18 +233,3 @@ test('format leaves unknown characters alone', () => {
 test('format spans a newline, which is what the vertical bar is built from', () => {
   assert.equal(Model.format(NOON, 'HH\n—\nmm'), '۱۴\n—\n۰۵')
 })
-
-// ---- Bidirectional text.
-
-test('ltrIsolate wraps a Latin run so bidi leaves it alone', () => {
-  assert.equal(Model.ltrIsolate('~/x/setup'), '⁦~/x/setup⁩')
-  assert.equal(Model.ltrIsolate(''), '', 'an empty run needs no isolate')
-  assert.equal(Model.ltrIsolate(null), '')
-})
-
-test('announceLabel isolates the event title it did not write', () => {
-  assert.equal(
-    Model.announceLabel('دوشنبه ۱۴:۲۱', 'Standup', '۱۰ دقیقه دیگر'),
-    'دوشنبه ۱۴:۲۱  ·  ⁦Standup⁩ ۱۰ دقیقه دیگر'
-  )
-})

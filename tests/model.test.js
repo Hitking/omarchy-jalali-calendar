@@ -342,7 +342,7 @@ test('nextEventToday returns null once the day is done', () => {
 test('announceLabel keeps the clock and appends the event', () => {
   assert.equal(
     Model.announceLabel('دوشنبه ۱۵:۴۶', 'Standup', '۱۰ دقیقه دیگر'),
-    'دوشنبه ۱۵:۴۶  ·  \u2066Standup\u2069 ۱۰ دقیقه دیگر'
+    'دوشنبه ۱۵:۴۶  ·  Standup ۱۰ دقیقه دیگر'
   )
 })
 

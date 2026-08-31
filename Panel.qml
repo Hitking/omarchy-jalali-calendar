@@ -1279,41 +1279,79 @@ Panel {
 
             // An empty day and a sync that never ran look identical unless
             // we say which one it is.
-            Text {
+            //
+            // The message and the shell command it names are two Text items,
+            // not two lines of one. A Text takes its base direction from its
+            // own content, and one holding a Persian sentence is a
+            // right-to-left paragraph all the way down -- which drags the
+            // weak "~/" off the front of the path and prints it at the far
+            // end, as "config/.../setup./~". Giving the command its own
+            // Latin-only item gives it its own left-to-right paragraph, and
+            // the command a new user is told to paste is one they can paste.
+            Column {
               id: emptyState
               width: parent.width
               visible: root.selectedEvents.length === 0
-              color: root.syncState === "missing" && emptyHover.hovered
+              spacing: Style.space(1)
+
+              readonly property bool actionable: root.syncState === "missing"
+
+              readonly property string message: {
+                if (root.syncState === "missing") {
+                  return root.setupCommandCopied
+                    ? qsTr("کپی شد. در ترمینال اجرا کنید:")
+                    : qsTr("هنوز تقویمی همگام‌سازی نشده. برای کپی کلیک کنید، سپس اجرا کنید:")
+                }
+                if (root.syncState === "version")
+                  return qsTr("فایل رویدادها را نسخهٔ جدیدتری نوشته است. افزونه را به‌روز کنید.")
+                if (root.syncState === "stale")
+                  return qsTr("ممکن است تقویم به‌روز نباشد. بررسی کنید:")
+                return qsTr("رویدادی ثبت نشده")
+              }
+
+              readonly property string command: {
+                if (root.syncState === "missing") return root.setupCommand
+                if (root.syncState === "stale") return "journalctl --user -u omarchy-calendar-sync"
+                return ""
+              }
+
+              readonly property color shade: emptyState.actionable && emptyHover.hovered
                 ? Style.hoverStateColor(root.contentForeground, Color.accent)
                 : Qt.darker(root.contentForeground, 1.9)
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
 
               HoverHandler {
                 id: emptyHover
-                enabled: root.syncState === "missing"
+                enabled: emptyState.actionable
                 cursorShape: Qt.PointingHandCursor
               }
 
               TapHandler {
-                enabled: root.syncState === "missing"
+                enabled: emptyState.actionable
                 onTapped: root.copySetupCommand()
               }
 
-              // Every Latin run below goes through Model.ltrIsolate. A shell
-              // command reordered by the surrounding Persian is a command
-              // that cannot be pasted, which is the whole point of printing
-              // it here.
-              text: root.syncState === "missing"
-                ? (root.setupCommandCopied
-                  ? qsTr("کپی شد. در ترمینال اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand))
-                  : qsTr("هنوز تقویمی همگام‌سازی نشده. برای کپی کلیک کنید، سپس اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand)))
-                : root.syncState === "version"
-                  ? qsTr("فایل رویدادها را نسخهٔ جدیدتری نوشته است. افزونه را به‌روز کنید.")
-                  : root.syncState === "stale"
-                    ? qsTr("ممکن است تقویم به‌روز نباشد. بررسی کنید:\n%1").arg(Model.ltrIsolate("journalctl --user -u omarchy-calendar-sync"))
-                    : qsTr("رویدادی ثبت نشده")
+              Text {
+                width: parent.width
+                text: emptyState.message
+                color: emptyState.shade
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
+
+              Text {
+                // Mirroring is switched off here and nowhere else: this is
+                // the one run of text in the panel that is not Persian, and
+                // it has to lay out as what it is.
+                LayoutMirroring.enabled: false
+                width: parent.width
+                visible: text !== ""
+                text: emptyState.command
+                color: emptyState.shade
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WrapAnywhere
+              }
             }
           }
 

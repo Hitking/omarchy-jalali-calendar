@@ -279,40 +279,71 @@ Column {
 
   SectionTitle { text: qsTr("همگام‌سازی") }
 
-  Text {
+  // Two items rather than two lines of one, for the same reason the panel's
+  // empty state is split: a Text holding a Persian sentence is a
+  // right-to-left paragraph throughout, and a shell command laid out
+  // right-to-left is a command nobody can paste.
+  Column {
+    id: syncStatus
     width: parent.width
-    color: root.syncState === "missing" && syncHover.hovered ? root.foreground : root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    wrapMode: Text.WordWrap
+    spacing: Style.space(1)
+
+    readonly property bool actionable: root.syncState === "missing"
+
+    readonly property string message: {
+      if (root.syncState === "missing") {
+        return root.setupCommandCopied
+          ? qsTr("کپی شد. در ترمینال اجرا کنید:")
+          : qsTr("هنوز تقویمی وصل نشده. برای کپی کلیک کنید، سپس اجرا کنید:")
+      }
+      if (root.syncState === "version")
+        return qsTr("فایل رویدادها را نسخهٔ جدیدتری از این افزونه نوشته است.")
+
+      var line = qsTr("%1 رویداد از %2").arg(root.num(root.eventCount)).arg(root.sourceLabel)
+      return root.syncState === "stale"
+        ? line + qsTr("\nآخرین همگام‌سازی قدیمی به نظر می‌رسد. بررسی کنید:")
+        : line + qsTr("\nآخرین همگام‌سازی %1").arg(root.syncedAt)
+    }
+
+    readonly property string command: {
+      if (root.syncState === "missing") return root.setupCommand
+      if (root.syncState === "stale") return "journalctl --user -u omarchy-calendar-sync"
+      return ""
+    }
+
+    readonly property color shade: syncStatus.actionable && syncHover.hovered
+      ? root.foreground
+      : root.faint
 
     HoverHandler {
       id: syncHover
-      enabled: root.syncState === "missing"
+      enabled: syncStatus.actionable
       cursorShape: Qt.PointingHandCursor
     }
 
     TapHandler {
-      enabled: root.syncState === "missing"
+      enabled: syncStatus.actionable
       onTapped: root.setupCommandCopyRequested()
     }
 
-    // Commands, paths and the sync's own name are Latin runs inside a Persian
-    // paragraph, so each one is isolated. Unisolated, bidi reorders them and
-    // prints a command that cannot be pasted.
-    text: {
-      if (root.syncState === "missing") {
-        return root.setupCommandCopied
-          ? qsTr("کپی شد. در ترمینال اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand))
-          : qsTr("هنوز تقویمی وصل نشده. برای کپی کلیک کنید، سپس اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand))
-      }
-      if (root.syncState === "version") return qsTr("فایل رویدادها را نسخهٔ جدیدتری از این افزونه نوشته است.")
+    Text {
+      width: parent.width
+      text: syncStatus.message
+      color: syncStatus.shade
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
 
-      var line = qsTr("%1 رویداد از %2").arg(root.num(root.eventCount)).arg(Model.ltrIsolate(root.sourceLabel))
-      if (root.syncState === "stale") {
-        return line + qsTr("\nآخرین همگام‌سازی قدیمی به نظر می‌رسد. بررسی کنید:\n%1").arg(Model.ltrIsolate("journalctl --user -u omarchy-calendar-sync"))
-      }
-      return line + qsTr("\nآخرین همگام‌سازی %1").arg(root.syncedAt)
+    Text {
+      LayoutMirroring.enabled: false
+      width: parent.width
+      visible: text !== ""
+      text: syncStatus.command
+      color: syncStatus.shade
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WrapAnywhere
     }
   }
 }

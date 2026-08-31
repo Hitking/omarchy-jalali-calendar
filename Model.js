@@ -232,21 +232,6 @@ function toLatinDigits(text) {
     .replace(/[٠-٩]/g, function(ch) { return String(ch.charCodeAt(0) - 0x0660) })
 }
 
-// ---- Bidirectional text.
-//
-// A Latin run inside a Persian paragraph is reordered by the bidi algorithm
-// unless it is isolated, and the damage is not cosmetic: a leading "~/" is
-// weak-directional, so it migrates to the far end and the one command a new
-// user is told to paste comes out as "config/.../setup./~". An isolate says
-// "this run has its own direction" without changing the paragraph around it.
-var LTR_ISOLATE = "\u2066"
-var POP_ISOLATE = "\u2069"
-
-function ltrIsolate(text) {
-  var value = String(text === undefined || text === null ? "" : text)
-  return value === "" ? "" : LTR_ISOLATE + value + POP_ISOLATE
-}
-
 // ---- Week of the year.
 //
 // Weeks run Saturday to Friday, week 1 is the week holding Farvardin 1, and
@@ -945,10 +930,7 @@ function announceLabel(clockText, title, countdown, limit) {
   if (!countdown) return clockText
   var shown = truncateTitle(title, limit)
   if (!shown) return clockText
-  // The title is isolated because it is not ours: an invitation written in
-  // Latin script, dropped unisolated between a Persian clock and a Persian
-  // countdown, drags the countdown to the wrong side of the label.
-  return clockText + "  ·  " + ltrIsolate(shown) + " " + countdown
+  return clockText + "  ·  " + shown + " " + countdown
 }
 
 // How long until an event starts, or null when it cannot be read.
@@ -1008,7 +990,6 @@ if (typeof module !== "undefined") {
     weekdayShortName: weekdayShortName,
     toPersianDigits: toPersianDigits,
     toLatinDigits: toLatinDigits,
-    ltrIsolate: ltrIsolate,
     format: format,
     JALALI_MONTHS: JALALI_MONTHS,
     WEEKDAYS: WEEKDAYS,
