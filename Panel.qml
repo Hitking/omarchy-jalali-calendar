@@ -1333,7 +1333,6 @@ Panel {
             thursdayWeekend: root.thursdayWeekend
             persianDigits: root.persianDigits
             rightToLeft: root.rtl
-            persianDigits: root.persianDigits
             announceLeadMinutes: root.setting("announceLeadMinutes", 15)
 
             syncState: root.syncState
