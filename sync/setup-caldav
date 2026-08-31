@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Interactive setup for the CalDAV sync: SmarterMail, Nextcloud, Radicale,
+# Fastmail, iCloud, or anything else that speaks the standard.
+#
+# Unlike the Google flow next door, this needs nothing from a cloud console:
+# a URL, a username and a password is the whole of it. The script writes the
+# config, stores the password with permissions that are not everybody's
+# business, proves the credentials work before it commits to them, and
+# installs the timer.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SYNC_BIN="$SCRIPT_DIR/omarchy-calendar-sync"
+CONFIG="${OMARCHY_CALENDAR_CONFIG:-$HOME/.config/omarchy/calendar-sync.json}"
+PASSWORD_FILE="${OMARCHY_CALDAV_PASSWORD_FILE:-$HOME/.config/omarchy/calendar-caldav.password}"
+UNIT_DIR="$HOME/.config/systemd/user"
+
+step() { printf '\n==> %s\n' "$1"; }
+fail() { printf '\nerror: %s\n' "$1" >&2; exit 1; }
+
+command -v python3 >/dev/null || fail "python3 is required"
+command -v jq >/dev/null || fail "jq is required"
+
+if [ ! -t 0 ]; then
+  fail "run this in a terminal: it asks for a server, a username and a password"
+fi
+
+cat <<'INTRO'
+Connecting a CalDAV calendar.
+
+You need three things:
+
+  1. The server URL. For SmarterMail this is the mail server root, the same
+     host you open webmail on, for example https://mail.example.com/ --
+     not the webmail path, and not a calendar-specific URL. The script
+     discovers the rest by asking the server.
+  2. Your username, usually the full email address.
+  3. Your password. If the account has two-factor authentication, this must
+     be an application-specific password, not the account password: CalDAV
+     has no way to prompt for a second factor.
+
+INTRO
+
+step "Server URL"
+read -r -p "  URL [https://mail.example.com/]: " SERVER_URL
+[ -n "$SERVER_URL" ] || fail "a server URL is required"
+
+step "Username"
+read -r -p "  username (usually your email address): " USERNAME
+[ -n "$USERNAME" ] || fail "a username is required"
+
+step "Password"
+# -s so it is not echoed, and never passed as an argument: an argument is
+# visible in ps to every process on the machine.
+read -r -s -p "  password: " PASSWORD
+printf '\n'
+[ -n "$PASSWORD" ] || fail "a password is required"
+
+step "Storing the password"
+mkdir -p "$(dirname "$PASSWORD_FILE")"
+# Created empty with the right mode before anything is written, so the
+# password is never briefly on disk as world-readable.
+touch "$PASSWORD_FILE"
+chmod 600 "$PASSWORD_FILE"
+printf '%s\n' "$PASSWORD" > "$PASSWORD_FILE"
+echo "  wrote $PASSWORD_FILE (chmod 600)"
+echo "  to use a password manager instead, delete that file and set"
+echo "  OMARCHY_CALDAV_PASSWORD in the service environment."
+
+step "Checking the credentials before writing any config"
+# Proven before anything is written, so a typo leaves no half-configured
+# sync behind for someone to debug later.
+if ! OMARCHY_CALDAV_PASSWORD="$PASSWORD" SYNC_SRC="$SCRIPT_DIR" \
+     python3 - "$SERVER_URL" "$USERNAME" <<'PYEOF'
+import os
+import sys
+
+sys.path.insert(0, os.environ["SYNC_SRC"])
+
+from omarchy_calendar_sync.caldav import CalDav, CalDavError
+
+url, username = sys.argv[1], sys.argv[2]
+client = CalDav(url, username, os.environ["OMARCHY_CALDAV_PASSWORD"])
+
+try:
+    calendars = client.calendars()
+except CalDavError as error:
+    print(f"  failed: {error}", file=sys.stderr)
+    sys.exit(1)
+
+if not calendars:
+    print("  connected, but the account has no calendars to read", file=sys.stderr)
+    sys.exit(1)
+
+print(f"  found {len(calendars)} calendar(s):")
+for calendar in calendars:
+    print(f"    - {calendar['name']}  {calendar['color']}")
+PYEOF
+then
+  fail "could not read the calendars. Nothing was written to $CONFIG."
+fi
+
+step "Writing $CONFIG"
+mkdir -p "$(dirname "$CONFIG")"
+[ -f "$CONFIG" ] || echo '{}' > "$CONFIG"
+
+tmp="$(mktemp)"
+jq --arg url "$SERVER_URL" \
+   --arg user "$USERNAME" \
+   --arg pwfile "$PASSWORD_FILE" \
+   '. + {
+      source: "caldav",
+      caldav: {
+        url: $url,
+        username: $user,
+        passwordFile: $pwfile,
+        verifyTls: true
+      }
+    }' "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
+echo "  source set to caldav"
+
+step "Installing the systemd timer"
+mkdir -p "$UNIT_DIR"
+cp "$SCRIPT_DIR/systemd/omarchy-calendar-sync."{service,timer} "$UNIT_DIR/"
+# The unit ships with the path this plugin installs to, but a hand-cloned
+# checkout can live anywhere, so the real path is written in.
+sed -i "s|^ExecStart=.*|ExecStart=$SYNC_BIN|" "$UNIT_DIR/omarchy-calendar-sync.service"
+systemctl --user daemon-reload
+systemctl --user enable --now omarchy-calendar-sync.timer
+echo "  enabled omarchy-calendar-sync.timer"
+
+step "First sync"
+if "$SYNC_BIN"; then
+  cat <<DONE
+
+Done. Events land in ~/.local/state/omarchy/calendar-events.json every five
+minutes and the widget picks them up without a restart.
+
+If the calendar goes quiet later:
+
+  journalctl --user -u omarchy-calendar-sync -f
+DONE
+else
+  fail "the first sync failed; the output above says why"
+fi

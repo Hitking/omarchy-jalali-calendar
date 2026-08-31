@@ -1,4 +1,10 @@
-"""Entry point. Orchestrates config, gws, normalization, and the write."""
+"""Entry point. Orchestrates config, a source, normalization, and the write.
+
+Two sources, one output. Google Calendar through `gws`, and CalDAV -- which
+is what SmarterMail speaks, along with Nextcloud, Radicale, Fastmail and
+iCloud. Which one runs is `source` in the config; everything downstream of
+fetching is shared, so both write the same file in the same shape.
+"""
 
 import argparse
 import json
@@ -10,7 +16,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import config as config_module
-from . import contract, normalize
+from . import contract, ics, normalize
+from .caldav import CalDav, CalDavError
 from .gws import Gws, GwsError
 
 EXIT_OK = 0
@@ -127,6 +134,76 @@ def _drop_duplicates(gevents, seen):
     return fresh
 
 
+def run_caldav(client, cfg, now, out_path, local_tz):
+    """Fetch over CalDAV, expand recurrences, normalize, write."""
+    try:
+        client.check()
+        calendars = config_module.select_calendars(client.calendars(), cfg)
+        time_min, time_max = config_module.window_bounds(cfg, now)
+
+        window_start = datetime.fromisoformat(time_min)
+        window_end = datetime.fromisoformat(time_max)
+        account = str(cfg.get("caldav", {}).get("username") or "")
+
+        rows = []
+        seen = set()
+        for calendar in calendars:
+            for text in client.events(calendar["url"], window_start, window_end):
+                for event in ics.read_calendar(text, local_tz):
+                    # An event visible from two calendars is one event. UID
+                    # plus start is the same key the Google path uses, and for
+                    # the same reason: a UID alone is shared by every instance
+                    # of a series.
+                    key = (event.get("uid"), event["start"].isoformat())
+                    if event.get("uid") and key in seen:
+                        continue
+                    if event.get("uid"):
+                        seen.add(key)
+
+                    occurrences = ics.expand(event, window_start, window_end)
+                    rows.extend(
+                        normalize.normalize_occurrences(
+                            event, occurrences, calendar, local_tz, account
+                        )
+                    )
+
+        source = "caldav/" + _host_of(cfg["caldav"]["url"])
+    except CalDavError as error:
+        print(f"sync failed: {error}", file=sys.stderr)
+        print(
+            "check the server URL and credentials in "
+            + str(config_module.CONFIG_PATH)
+            + ", or re-run sync/setup-caldav",
+            file=sys.stderr,
+        )
+        return EXIT_SYNC_FAILED
+
+    return _finish(rows, len(calendars), now, source, out_path)
+
+
+def _host_of(url):
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url if "//" in url else "https://" + url)
+    return parsed.netloc or url
+
+
+def _finish(rows, calendar_count, now, source, out_path):
+    """Sort, validate and write. Shared by both sources so neither can drift."""
+    rows.sort(key=lambda row: (row["dateKey"], row["start"], row["title"]))
+    doc = contract.build_document(rows, now.isoformat(), source)
+
+    problems = contract.validate(doc)
+    if problems:
+        for problem in problems:
+            print(f"refusing to write invalid document: {problem}", file=sys.stderr)
+        return EXIT_SYNC_FAILED
+
+    write_atomic(out_path, doc)
+    print(f"wrote {len(rows)} rows from {calendar_count} calendars to {out_path}")
+    return EXIT_OK
+
+
 def run(client, cfg, now, out_path, local_tz):
     """Fetch, normalize, write. Returns a process exit code."""
     try:
@@ -152,24 +229,17 @@ def run(client, cfg, now, out_path, local_tz):
         )
         return EXIT_SYNC_FAILED
 
-    rows.sort(key=lambda row: (row["dateKey"], row["start"], row["title"]))
-    doc = contract.build_document(rows, now.isoformat(), source)
-
-    problems = contract.validate(doc)
-    if problems:
-        for problem in problems:
-            print(f"refusing to write invalid document: {problem}", file=sys.stderr)
-        return EXIT_SYNC_FAILED
-
-    write_atomic(out_path, doc)
-    print(f"wrote {len(rows)} rows from {len(calendars)} calendars to {out_path}")
-    return EXIT_OK
+    return _finish(rows, len(calendars), now, source, out_path)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="omarchy-calendar-sync",
-        description="Sync Google Calendar into the Omarchy calendar widget file.",
+        description=(
+            "Sync a calendar into the Omarchy calendar widget file, from "
+            "Google Calendar or any CalDAV server (SmarterMail, Nextcloud, "
+            "Radicale, Fastmail)."
+        ),
     )
     parser.add_argument("--config", default=None, help="path to calendar-sync.json")
     parser.add_argument("--out", default=None, help="path to the contract file")
@@ -184,6 +254,21 @@ def main(argv=None):
     out_path = Path(args.out) if args.out else contract.CONTRACT_PATH
     now = datetime.now(timezone.utc)
     local_tz = resolve_local_timezone()
+
+    if cfg["source"] == config_module.SOURCE_CALDAV:
+        try:
+            password = config_module.read_password(cfg)
+        except config_module.ConfigError as error:
+            print(f"config error: {error}", file=sys.stderr)
+            return EXIT_BAD_CONFIG
+
+        client = CalDav(
+            cfg["caldav"]["url"],
+            cfg["caldav"]["username"],
+            password,
+            verify_tls=cfg["caldav"]["verifyTls"],
+        )
+        return run_caldav(client, cfg, now, out_path, local_tz)
 
     return run(Gws(cfg["profile"], binary=cfg["gwsPath"]), cfg, now, out_path, local_tz)
 

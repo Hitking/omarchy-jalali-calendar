@@ -1,10 +1,17 @@
-"""Turn Google Calendar event resources into contract rows.
+"""Turn events from any source into contract rows.
 
 Pure functions only. No I/O, no subprocess, no clock reads. Everything this
 module needs is passed in, which is what makes the timezone behaviour
 testable without freezing time.
+
+Two sources feed this: Google Calendar resources through `normalize_all`, and
+iCalendar occurrences -- CalDAV, so SmarterMail and anything else standard --
+through `normalize_occurrences`. Both funnel into `rows_for_occurrence`, so
+the row shape cannot drift between them: there is one place that decides what
+a row looks like, and it is the same one for both.
 """
 
+import re
 from datetime import date, datetime, time, timedelta
 
 NO_TITLE = "(no title)"
@@ -101,15 +108,53 @@ def normalize_event(gevent, calendar, tz):
     event_type = str(gevent.get("eventType") or "")
     response_status = _response_status(gevent)
 
+    return rows_for_occurrence(
+        event_id=gevent.get("id", ""),
+        calendar=calendar,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        all_day=all_day,
+        title=title,
+        location=location,
+        meeting_url=meeting_url,
+        event_url=event_url,
+        event_type=event_type,
+        response_status=response_status,
+        start_iso=start_iso,
+        end_iso=end_iso,
+    )
+
+
+def rows_for_occurrence(
+    *,
+    event_id,
+    calendar,
+    start_dt,
+    end_dt,
+    all_day,
+    title,
+    location="",
+    meeting_url="",
+    event_url="",
+    event_type="",
+    response_status="",
+    start_iso=None,
+    end_iso=None,
+):
+    """One contract row per local day a single occurrence covers.
+
+    The only place a row is built. Rows from one occurrence share an id, so
+    consumers key on id plus dateKey and never on id alone.
+    """
     return [
         {
-            "id": gevent.get("id", ""),
+            "id": event_id,
             "calendarId": calendar["id"],
             "calendarName": calendar["name"],
             "color": calendar["color"],
             "dateKey": day.isoformat(),
-            "start": start_iso,
-            "end": end_iso,
+            "start": start_iso if start_iso is not None else start_dt.isoformat(),
+            "end": end_iso if end_iso is not None else end_dt.isoformat(),
             "allDay": all_day,
             "title": title,
             "location": location,
@@ -158,3 +203,113 @@ def _covered_days(start_dt, end_dt, all_day):
         days.append(cursor)
         cursor += timedelta(days=1)
     return days
+
+
+# ---- The iCalendar side: CalDAV, so SmarterMail and anything else standard.
+
+# iCalendar spells participation status differently from Google. The contract
+# speaks Google's vocabulary because that is what shipped first and what the
+# widget already reads, so this is where the two meet.
+PARTSTAT_TO_RESPONSE = {
+    "ACCEPTED": "accepted",
+    "DECLINED": "declined",
+    "TENTATIVE": "tentative",
+    "NEEDS-ACTION": "needsAction",
+    "DELEGATED": "needsAction",
+}
+
+# A Join button is a promise that clicking it joins a meeting. Any https URL
+# in a description would light it up for a link to an agenda, a ticket or a
+# newsletter, so only hosts that actually host meetings count.
+MEETING_HOSTS = (
+    "teams.microsoft.com",
+    "teams.live.com",
+    "zoom.us",
+    "meet.google.com",
+    "meet.jit.si",
+    "whereby.com",
+    "webex.com",
+    "gotomeeting.com",
+    "bluejeans.com",
+    "chime.aws",
+    "skype.com",
+)
+
+_URL_IN_TEXT = re.compile(r"https://[^\s<>\"'\]\),]+")
+
+
+def _meeting_url_in(text):
+    """The first real conferencing link in a blob of text, or blank."""
+    for candidate in _URL_IN_TEXT.findall(str(text or "")):
+        url = _https_only(candidate.rstrip(".,;:"))
+        if not url:
+            continue
+        host = url.split("/", 3)[2].lower() if url.count("/") >= 2 else ""
+        if any(host == known or host.endswith("." + known) for known in MEETING_HOSTS):
+            return url
+    return ""
+
+
+def _ics_response_status(event, account_address):
+    """This account's own answer to the invitation, blank when not invited.
+
+    iCalendar has no "this attendee is you" marker the way Google does, so
+    the account the sync authenticated as is matched by address. Without a
+    match the answer is blank, which reads as "not an invitation" -- better
+    than guessing and striking through somebody else's decline.
+    """
+    address = str(account_address or "").strip().lower()
+    if not address:
+        return ""
+    for attendee in event.get("attendees") or []:
+        if attendee.get("address") == address:
+            return PARTSTAT_TO_RESPONSE.get(attendee.get("partstat", ""), "")
+    return ""
+
+
+def normalize_occurrences(event, occurrences, calendar, tz, account_address=""):
+    """Contract rows for every expanded occurrence of one iCalendar event."""
+    if str(event.get("status", "")).upper() == "CANCELLED":
+        return []
+
+    all_day = bool(event.get("all_day"))
+    duration = event["end"] - event["start"]
+    if duration.total_seconds() < 0:
+        duration = timedelta(0)
+    if all_day and duration.total_seconds() <= 0:
+        # DTEND is exclusive, so a one-day event spans exactly one day.
+        duration = timedelta(days=1)
+
+    title = str(event.get("title") or "").strip() or NO_TITLE
+    location = str(event.get("location") or "")
+    uid = str(event.get("uid") or "")
+
+    meeting_url = _meeting_url_in(location) or _meeting_url_in(
+        event.get("description")
+    )
+    event_url = _https_only(event.get("url"))
+    response_status = _ics_response_status(event, account_address)
+
+    rows = []
+    for start_dt in occurrences:
+        local_start = start_dt.astimezone(tz)
+        local_end = (start_dt + duration).astimezone(tz)
+        rows.extend(
+            rows_for_occurrence(
+                # Every occurrence of a series carries the same UID, so the id
+                # has to name the instant too or a weekly standup collapses
+                # into one row that the widget then keys against every day it
+                # appears on.
+                event_id=f"{uid}#{start_dt.isoformat()}" if event.get("rrule") else uid,
+                calendar=calendar,
+                start_dt=local_start,
+                end_dt=local_end,
+                all_day=all_day,
+                title=title,
+                location="" if location.startswith("https://") else location,
+                meeting_url=meeting_url,
+                event_url=event_url,
+                response_status=response_status,
+            )
+        )
+    return rows

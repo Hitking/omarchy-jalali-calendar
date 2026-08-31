@@ -11,7 +11,24 @@ from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".config" / "omarchy" / "calendar-sync.json"
 
+# Which backend to pull from. "google" keeps the original behaviour for
+# everyone already set up, so this key can be absent and nothing changes.
+SOURCE_GOOGLE = "google"
+SOURCE_CALDAV = "caldav"
+SOURCES = (SOURCE_GOOGLE, SOURCE_CALDAV)
+
 DEFAULTS = {
+    "source": SOURCE_GOOGLE,
+    # CalDAV, which is what SmarterMail speaks -- and Nextcloud, Radicale,
+    # Fastmail and iCloud with it. The password is read from a file rather
+    # than held here: config lands in a git-managed dotfiles repo often
+    # enough that a mail password in it is a matter of time.
+    "caldav": {
+        "url": "",
+        "username": "",
+        "passwordFile": str(Path.home() / ".config" / "omarchy" / "calendar-caldav.password"),
+        "verifyTls": True,
+    },
     "profile": str(Path.home() / ".config" / "gws-omarchy-calendar"),
     # Resolved to an absolute path by sync/setup. A systemd user service
     # does not inherit an interactive shell PATH, so relying on the bare
@@ -44,6 +61,8 @@ def load(path=None):
     merged = _merge(copy.deepcopy(DEFAULTS), raw)
 
     _validate_calendars(merged.get("calendars"))
+    merged["source"] = _validate_source(merged.get("source"))
+    _validate_caldav(merged)
 
     window = merged.get("window")
     if isinstance(window, dict):
@@ -120,3 +139,67 @@ def window_bounds(config, now):
         (now - timedelta(days=past)).isoformat(),
         (now + timedelta(days=future)).isoformat(),
     )
+
+
+def _validate_source(value):
+    source = str(value or SOURCE_GOOGLE).strip().lower()
+    if source not in SOURCES:
+        raise ConfigError(
+            f"source must be one of {', '.join(SOURCES)}, got {value!r}"
+        )
+    return source
+
+
+def _validate_caldav(merged):
+    """Only checked when it is the source in use.
+
+    A half-filled caldav block sitting unused next to a working Google setup
+    is not an error, and refusing to start over it would be.
+    """
+    caldav = merged.get("caldav")
+    if not isinstance(caldav, dict):
+        raise ConfigError("caldav must be a JSON object")
+
+    caldav["verifyTls"] = caldav.get("verifyTls", True) is not False
+
+    if merged.get("source") != SOURCE_CALDAV:
+        return
+
+    for key in ("url", "username"):
+        if not str(caldav.get(key) or "").strip():
+            raise ConfigError(f"caldav.{key} is required when source is caldav")
+
+
+def read_password(cfg):
+    """The CalDAV password, from the environment or the file named in config.
+
+    OMARCHY_CALDAV_PASSWORD wins so a password manager can supply it without
+    ever writing it to disk. The file is the fallback, and its permissions are
+    checked rather than assumed: a mail password readable by every process on
+    the machine is worth one line of complaint.
+    """
+    import os
+    import stat
+    import sys
+
+    from_env = os.environ.get("OMARCHY_CALDAV_PASSWORD")
+    if from_env:
+        return from_env
+
+    path = Path(str(cfg.get("caldav", {}).get("passwordFile") or "")).expanduser()
+    if not path.exists():
+        raise ConfigError(
+            f"no password: set OMARCHY_CALDAV_PASSWORD or create {path} "
+            "containing the password on one line"
+        )
+
+    try:
+        mode = path.stat().st_mode
+        if mode & (stat.S_IRWXG | stat.S_IRWXO):
+            print(
+                f"warning: {path} is readable by others; run: chmod 600 {path}",
+                file=sys.stderr,
+            )
+        return path.read_text().strip()
+    except OSError as error:
+        raise ConfigError(f"cannot read {path}: {error}") from error
