@@ -41,7 +41,7 @@ yay -S ttf-vazirmatn        # یا: https://github.com/rastikerdar/vazirmatn
 ## نصب
 
 ```bash
-omarchy plugin add https://github.com/<you>/omarchy-jalali-calendar.git --enable
+omarchy plugin add https://gitea.qalam.group/masoud/omarchy-jalali-calendar.git --enable
 ```
 
 یا از روی یک کلون محلی:
@@ -211,7 +211,7 @@ this one unchanged and both plugins can share a single timer. The Jalali date
 is a rendering of a day, never its name.
 
 ```bash
-omarchy plugin add https://github.com/<you>/omarchy-jalali-calendar.git --enable
+omarchy plugin add https://gitea.qalam.group/masoud/omarchy-jalali-calendar.git --enable
 ```
 
 Then point `bar.centerAnchor` at `masoud.jalali-calendar` in
