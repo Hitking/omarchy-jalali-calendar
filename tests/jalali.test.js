@@ -150,22 +150,22 @@ test('no Jalali year is ever numbered past 53 weeks', () => {
 // ---- Names.
 
 test('month and weekday names are the Persian ones', () => {
-  assert.equal(Model.monthName(1), 'فروردین')
-  assert.equal(Model.monthName(12), 'اسفند')
-  assert.equal(Model.monthName(0), '')
-  assert.equal(Model.monthName(13), '')
+  assert.equal(Model.monthName(Model.JALALI, 1), 'فروردین')
+  assert.equal(Model.monthName(Model.JALALI, 12), 'اسفند')
+  assert.equal(Model.monthName(Model.JALALI, 0), '')
+  assert.equal(Model.monthName(Model.JALALI, 13), '')
 
   // Indexed by JS Date.getDay(), so 6 is Saturday and 0 is Sunday.
-  assert.equal(Model.weekdayName(Model.SATURDAY), 'شنبه')
-  assert.equal(Model.weekdayName(0), 'یکشنبه')
-  assert.equal(Model.weekdayName(Model.FRIDAY), 'جمعه')
-  assert.equal(Model.weekdayShortName(Model.SATURDAY), 'ش')
+  assert.equal(Model.weekdayName(Model.JALALI, Model.SATURDAY), 'شنبه')
+  assert.equal(Model.weekdayName(Model.JALALI, 0), 'یکشنبه')
+  assert.equal(Model.weekdayName(Model.JALALI, Model.FRIDAY), 'جمعه')
+  assert.equal(Model.weekdayShortName(Model.JALALI, Model.SATURDAY), 'ش')
 })
 
 test('the weekday tables are indexed the way a JS Date reports its day', () => {
   const cursor = new Date(2026, 7, 31) // a Monday
   assert.equal(cursor.getDay(), 1)
-  assert.equal(Model.weekdayName(cursor.getDay()), 'دوشنبه')
+  assert.equal(Model.weekdayName(Model.JALALI, cursor.getDay()), 'دوشنبه')
 })
 
 // ---- Digits.
@@ -212,8 +212,8 @@ test('format renders time separately from the calendar', () => {
 })
 
 test('format can be asked for Latin digits', () => {
-  assert.equal(Model.format(NOON, 'yyyy/MM/dd', false), '1405/06/09')
-  assert.equal(Model.format(NOON, 'dddd d MMMM', false), 'دوشنبه 9 شهریور')
+  assert.equal(Model.format(NOON, 'yyyy/MM/dd', { persianDigits: false }), '1405/06/09')
+  assert.equal(Model.format(NOON, 'dddd d MMMM', { persianDigits: false }), 'دوشنبه 9 شهریور')
 })
 
 test('format treats a quoted run as a literal', () => {

@@ -19,17 +19,23 @@ BarWidget {
 
   property date displayDate: clock.date
 
-  // Vazirmatn by default, because this is a Persian calendar and the bar's
-  // own family is a monospace programming face that renders Persian, if at
-  // all, in a fallback nobody chose. Blank falls back to the bar's family for
-  // anyone who has already set a Persian-capable one system-wide.
+  // Which calendar the label is written in. Switching it is what lets this
+  // widget replace Omarchy's clock outright instead of sitting beside it.
+  readonly property string calendar: Model.normalizeCalendar(setting("calendar", Model.JALALI))
+
+  // Vazirmatn by default, because the bar's own family is a monospace
+  // programming face that renders Persian, if at all, in a fallback nobody
+  // chose. The face ships with the plugin -- see the FontLoaders below -- so
+  // this default works on a machine with no Persian font installed. Blank
+  // falls back to the bar's family.
   readonly property string configuredFontFamily: setting("fontFamily", "Vazirmatn")
   readonly property string iconFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string contentFontFamily: configuredFontFamily !== ""
     ? configuredFontFamily
     : iconFontFamily
 
-  readonly property bool persianDigits: setting("persianDigits", true)
+  readonly property bool persianDigits: Model.resolveBoolean(
+    setting("persianDigits", null), Model.usesPersianDigitsByDefault(calendar))
 
   readonly property string configuredFormat: vertical
     ? setting("verticalFormat", "HH\n—\nmm")
@@ -38,7 +44,10 @@ BarWidget {
     ? setting("verticalFormatAlt", "dd\nMMM\nyy")
     : setting("formatAlt", "dddd d MMMM yyyy")
 
-  readonly property var formatRing: Model.clockFormatRing(configuredFormat, configuredAltFormat, Model.clockFormats(vertical))
+  // The ring follows the calendar, so right-clicking under Gregorian walks
+  // the built-in clock's own presets, ISO week token and all.
+  readonly property var formatRing: Model.clockFormatRing(
+    configuredFormat, configuredAltFormat, Model.clockFormats(vertical, calendar))
 
   // What the bar shows is what shell.json stores, so a cycled format is the
   // format from then on rather than something that reverts on restart.
@@ -61,7 +70,8 @@ BarWidget {
     && Model.shouldAnnounce(upcomingEvent, nowMs, announceLeadMinutes)
 
   readonly property string countdownPhrase: announcing
-    ? (Model.formatCountdown(Model.millisUntil(upcomingEvent, nowMs), persianDigits) || "")
+    ? (Model.formatCountdown(Model.millisUntil(upcomingEvent, nowMs),
+        { calendar: root.calendar, persianDigits: root.persianDigits }) || "")
     : ""
 
   // The clock stays. This widget replaces the desktop's clock, so trading the
@@ -95,8 +105,17 @@ BarWidget {
       root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
+  // Month and day names in Gregorian mode come from the panel, which asks
+  // Qt's locale for them; the bar reads them off it rather than keeping a
+  // second copy of that logic.
+  readonly property var localeNames: panelLoader.item ? panelLoader.item.localeNames : null
+
   function formatted(date) {
-    return Model.format(date, activeFormat, root.persianDigits)
+    return Model.format(date, activeFormat, {
+      calendar: root.calendar,
+      persianDigits: root.persianDigits,
+      names: root.localeNames
+    })
   }
 
   // ---- Calendar popup. Shape contract for shell.summon/hide/toggle
@@ -118,6 +137,14 @@ BarWidget {
 
   function toggleWeekStart() {
     if (panelLoader.item) panelLoader.item.toggleWeekStart()
+  }
+
+  function toggleCalendar() {
+    if (panelLoader.item) panelLoader.item.toggleCalendar()
+  }
+
+  function setCalendar(value) {
+    if (panelLoader.item) panelLoader.item.setCalendar(value)
   }
 
   // The clock fills more slot than it paints a mark for, at both
@@ -158,6 +185,12 @@ BarWidget {
     onDateChanged: root.displayDate = date
   }
 
+  // The bar renders before the panel is loaded and outlives it being closed,
+  // so it loads the bundled face itself rather than relying on the panel
+  // having done it. Registering a family twice is free.
+  FontLoader { source: Qt.resolvedUrl("fonts/Vazirmatn-Regular.ttf") }
+  FontLoader { source: Qt.resolvedUrl("fonts/Vazirmatn-Bold.ttf") }
+
   Loader {
     id: panelLoader
     active: true
@@ -175,6 +208,8 @@ BarWidget {
     function refresh(): void { root.broadcast("refresh") }
     function cycleFormat(): void { root.cycleFormat() }
     function toggleWeekStart(): void { root.toggleWeekStart() }
+    function toggleCalendar(): void { root.toggleCalendar() }
+    function setCalendar(system: string): void { root.setCalendar(system) }
     function open(): void { root.open() }
     function close(): void { root.close() }
     function show(): void { root.open() }

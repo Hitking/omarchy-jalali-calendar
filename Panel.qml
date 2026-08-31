@@ -41,40 +41,93 @@ Panel {
   property var hostWidget: null
   readonly property var barIdentity: hostWidget || root
 
+  // ---- Which calendar. Everything below reads through Model's dispatch
+  //      layer rather than branching on this, so the panel never has two
+  //      versions of the same logic.
+  //
+  //      Switching is what lets this widget stand in for Omarchy's built-in
+  //      clock outright, instead of sitting next to it: turn it to Gregorian
+  //      and it is that clock, week numbers, format ring and all.
+  readonly property string calendar: Model.normalizeCalendar(setting("calendar", Model.JALALI))
+  readonly property bool jalali: Model.isJalali(calendar)
+
+  function t(key) {
+    return Model.text(root.calendar, key)
+  }
+
+  // In Gregorian mode the month and day names come from Qt's own locale, so a
+  // desktop running in French keeps reading French exactly as the built-in
+  // clock did. Model.js stays locale-free and testable; the locale stays
+  // where the locale lives. Jalali has one set of names and no locale to ask.
+  readonly property var localeNames: root.jalali ? null : ({
+    months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(function(m) {
+      return Qt.locale().standaloneMonthName(m - 1, Locale.LongFormat)
+    }),
+    monthsShort: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(function(m) {
+      return Qt.locale().standaloneMonthName(m - 1, Locale.ShortFormat)
+    }),
+    weekdays: [0, 1, 2, 3, 4, 5, 6].map(function(d) {
+      return Qt.locale().standaloneDayName(d, Locale.LongFormat)
+    }),
+    weekdaysShort: [0, 1, 2, 3, 4, 5, 6].map(function(d) {
+      return String(Qt.locale().standaloneDayName(d, Locale.ShortFormat))
+        .replace(/\.$/, "").toUpperCase()
+    })
+  })
+
   // ---- Today. SystemClock keeps this honest across midnight so the
   //      highlight rolls over without the panel being reopened.
   property date today: new Date()
   readonly property string todayKey: Model.keyForDate(today)
-  readonly property var todayJalali: Model.jalaliFromDate(today)
+  readonly property var todayCivil: Model.fromDate(calendar, today)
 
-  // The month on screen. Stepping moves this and nothing else: the grid is
-  // a read-out, not a picker, so there is no per-day cursor to keep in sync.
-  property int viewYear: todayJalali.jy
-  property int viewMonth: todayJalali.jm
+  // The month on screen, in the calendar on screen. Stepping moves this and
+  // nothing else: the grid is a read-out, not a picker, so there is no
+  // per-day cursor to keep in sync.
+  property int viewYear: todayCivil.year
+  property int viewMonth: todayCivil.month
 
-  readonly property bool viewingCurrentMonth: viewYear === todayJalali.jy && viewMonth === todayJalali.jm
+  readonly property bool viewingCurrentMonth: viewYear === todayCivil.year && viewMonth === todayCivil.month
+
+  // Switching calendars renames the month underfoot, so the view has to be
+  // re-derived rather than left holding a number that means something else
+  // now. Following today is the only sane landing place: 1405/6 and 2026/6
+  // are not the same month, and there is no honest way to carry the old view
+  // across.
+  onCalendarChanged: root.goToToday()
 
   // Pinned to today, not to the month being browsed — stepping through the
   // calendar does not change how much of the year is gone. Measured on the
-  // Jalali year, so the bar empties at Nowruz rather than in January.
-  readonly property real yearDone: Model.yearProgress(todayJalali.jy, todayJalali.jm, todayJalali.jd)
-  readonly property int yearDonePercent: Model.yearProgressPercent(todayJalali.jy, todayJalali.jm, todayJalali.jd)
+  // year of the active calendar, so under Jalali the bar empties at Nowruz
+  // rather than in January.
+  readonly property real yearDone: Model.yearProgress(calendar, todayCivil.year, todayCivil.month, todayCivil.day)
+  readonly property int yearDonePercent: Model.yearProgressPercent(calendar, todayCivil.year, todayCivil.month, todayCivil.day)
 
   // Memento mori, for anyone who goes looking: double-tapping the year bar
   // asks for a birth year and a life expectancy, and a second bar tracks one
-  // against the other. A Jalali birth year, because that is the year an
-  // Iranian knows their own birth by. Without one the bar stays hidden.
-  readonly property int birthYear: Model.parseBirthYear(setting("birthYear", 0), todayJalali.jy)
-  readonly property int age: Model.ageFromBirthYear(birthYear, todayJalali.jy)
+  // against the other. Without one the bar stays hidden.
+  //
+  // Read and written in the calendar on screen -- an Iranian knows their birth
+  // year as 1358, not 1979 -- but stored as Gregorian, so flipping the
+  // calendar does not silently invalidate a year already entered.
+  readonly property int birthYear: Model.parseBirthYear(
+    Model.birthYearInCalendar(setting("birthYear", 0), calendar), todayCivil.year)
+  readonly property int age: Model.ageFromBirthYear(birthYear, todayCivil.year)
   readonly property int lifeExpectancy: Model.parseLifeExpectancy(setting("lifeExpectancy", 0))
   readonly property real lifeDone: Model.lifeProgress(age, lifeExpectancy)
   readonly property int lifeDonePercent: Model.lifeProgressPercent(age, lifeExpectancy)
   property bool editingLife: false
 
-  // ---- Persian presentation.
+  // ---- Presentation.
+  //
+  // Unset follows the calendar, so switching moves everything that ought to
+  // move. An explicit choice always wins and survives the switch, because a
+  // deliberate setting is not something a display toggle gets to undo.
 
-  readonly property bool persianDigits: setting("persianDigits", true)
-  readonly property bool rtl: setting("rightToLeft", true)
+  readonly property bool persianDigits: Model.resolveBoolean(
+    setting("persianDigits", null), Model.usesPersianDigitsByDefault(calendar))
+  readonly property bool rtl: Model.resolveBoolean(
+    setting("rightToLeft", null), Model.isRightToLeftByDefault(calendar))
 
   // Vazirmatn for text, the bar's own family for icons. They cannot be the
   // same string: the chevrons and the gear are Nerd Font glyphs that no
@@ -95,22 +148,30 @@ Panel {
   }
 
   function formatDate(date, pattern) {
-    return Model.format(date, pattern, root.persianDigits)
+    return Model.format(date, pattern, {
+      calendar: root.calendar,
+      persianDigits: root.persianDigits,
+      names: root.localeNames
+    })
   }
 
-  // Week starts on Saturday, not on whatever Qt's locale says. A Jalali
-  // calendar laid out Monday-first because the desktop is in en_US would be
-  // wrong in the one way this widget exists to fix. Clicking the grid's
-  // week-number heading writes the choice back to shell.json.
-  readonly property int weekStart: Model.normalizedWeekStart(setting("weekStartDay", null), Model.SATURDAY)
-  readonly property string nextWeekStartLabel: Model.weekdayName(Model.toggledWeekStart(weekStart))
-  readonly property var weekdays: Model.weekdayOrder(weekStart)
+  // Saturday under Jalali, Monday under Gregorian, and never whatever Qt's
+  // locale says: a Jalali calendar laid out Monday-first because the desktop
+  // is in en_US would be wrong in the one way this widget exists to fix.
+  // Clicking the grid's week-number heading writes the choice back to
+  // shell.json.
+  readonly property int weekStart: Model.normalizedWeekStart(
+    setting("weekStartDay", null), Model.defaultWeekStart(calendar))
+  readonly property string nextWeekStartLabel: Model.weekdayName(
+    calendar, Model.toggledWeekStart(weekStart, calendar), localeNames)
+  readonly property var weekdays: Model.weekdayOrder(weekStart, calendar)
 
   // Friday is the weekend everywhere in Iran; Thursday is a real
-  // disagreement rather than a preference, so it is a setting.
+  // disagreement rather than a preference, so it is a setting. It means
+  // nothing under Gregorian, where the weekend is Saturday and Sunday.
   readonly property bool thursdayWeekend: setting("thursdayWeekend", false)
 
-  readonly property var weeks: Model.monthGrid(viewYear, viewMonth, weekStart, todayKey, eventIndex, {
+  readonly property var weeks: Model.monthGrid(calendar, viewYear, viewMonth, weekStart, todayKey, eventIndex, {
     thursdayWeekend: thursdayWeekend
   })
 
@@ -189,7 +250,8 @@ Panel {
   property date nowTick: new Date()
   readonly property var upcomingEvent: Model.nextEventToday(visibleEventList, nowTick.getTime(), todayKey)
   readonly property string upcomingCountdown: Model.formatCountdown(
-    Model.millisUntil(upcomingEvent, nowTick.getTime()), root.persianDigits) || ""
+    Model.millisUntil(upcomingEvent, nowTick.getTime()),
+    { calendar: root.calendar, persianDigits: root.persianDigits }) || ""
 
   // The year and life bars are the upstream clock's, kept but opt-in. What
   // most people want in that slot is what is coming up next, not how much of
@@ -218,7 +280,11 @@ Panel {
     root.hiddenCalendars = Array.isArray(stored) ? stored.slice() : []
   }
 
-  function toggleCalendar(calendarId) {
+  // Named for what it hides, not for what it is called in the settings page.
+  // `toggleCalendar` now means switching Jalali for Gregorian, and two
+  // functions a letter apart doing unrelated things is a bug waiting to be
+  // written.
+  function toggleCalendarVisibility(calendarId) {
     root.hiddenCalendars = Model.toggleHiddenCalendar(root.hiddenCalendars, calendarId)
     persistSettings({ hiddenCalendars: root.hiddenCalendars })
   }
@@ -237,6 +303,20 @@ Panel {
 
   function toggleThursdayWeekend() {
     persistSettings({ thursdayWeekend: !root.thursdayWeekend })
+  }
+
+  // Only the calendar is written. Week start, digits and direction are left
+  // unset so they follow it, unless someone has already set one on purpose --
+  // in which case that choice survives the switch, which is the point of
+  // storing it.
+  function setCalendar(value) {
+    var next = Model.normalizeCalendar(value)
+    if (next === root.calendar) return
+    persistSettings({ calendar: next })
+  }
+
+  function toggleCalendar() {
+    root.setCalendar(Model.otherCalendar(root.calendar))
   }
 
   function setAnnounceLeadMinutes(minutes) {
@@ -337,8 +417,8 @@ Panel {
   }
 
   function goToToday() {
-    root.viewYear = root.todayJalali.jy
-    root.viewMonth = root.todayJalali.jm
+    root.viewYear = root.todayCivil.year
+    root.viewMonth = root.todayCivil.month
   }
 
   function moveMonth(delta) {
@@ -417,22 +497,42 @@ Panel {
   // typed into with whatever keyboard is on, and refusing ۱۳۵۸ while
   // accepting 1358 would be a trap in a Persian calendar.
   function commitLife() {
-    var born = Model.parseBirthYear(bornField.text, root.todayJalali.jy)
+    var born = Model.parseBirthYear(bornField.text, root.todayCivil.year)
     var span = Model.parseLifeExpectancy(expectancyField.text)
-    if (born !== root.birthYear || span !== root.lifeExpectancy)
-      persistSettings({ birthYear: born, lifeExpectancy: span })
+    if (born !== root.birthYear || span !== root.lifeExpectancy) {
+      persistSettings({
+        birthYear: Model.birthYearToStorage(born, root.calendar),
+        lifeExpectancy: span
+      })
+    }
     cancelEditingLife()
   }
 
   function toggleWeekStart() {
-    setWeekStart(Model.toggledWeekStart(root.weekStart))
+    setWeekStart(Model.toggledWeekStart(root.weekStart, root.calendar))
   }
 
-  // One letter per column. Seven columns headed "چهارشنبه" would set the
-  // width of the whole grid off a single day name.
+  // One letter per column under Jalali, three under Gregorian. Seven columns
+  // headed "چهارشنبه" would set the width of the whole grid off a single day
+  // name.
   function weekdayLabel(weekday) {
-    return Model.weekdayShortName(weekday)
+    return Model.weekdayShortName(root.calendar, weekday, root.localeNames)
   }
+
+  // ---- The bundled face.
+  //
+  // Vazirmatn ships with the plugin rather than being a prerequisite. The
+  // README used to say `yay -S ttf-vazirmatn`, which installs nothing --
+  // the AUR package is `vazirmatn-fonts` -- and even the right command is a
+  // step between someone and a working widget for a font the widget cannot
+  // do without. FontLoader registers the family for the whole shell process,
+  // so `font.family: "Vazirmatn"` resolves to this copy whether or not one
+  // is installed system-wide.
+  //
+  // Regular and Bold, because the panel sets font.bold and a synthesised
+  // bold of a Persian face is a smear. Under OFL 1.1; see fonts/OFL.txt.
+  FontLoader { id: vazirRegular; source: Qt.resolvedUrl("fonts/Vazirmatn-Regular.ttf") }
+  FontLoader { id: vazirBold; source: Qt.resolvedUrl("fonts/Vazirmatn-Bold.ttf") }
 
   // watchChanges is the point of this whole widget. The sync rewrites the
   // file every few minutes and the popup has to follow it without the shell
@@ -556,7 +656,7 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               iconText: root.settingsOpen ? "󰅖" : "󰒓"
-              tooltipText: root.settingsOpen ? qsTr("بازگشت به تقویم") : qsTr("تنظیمات")
+              tooltipText: root.settingsOpen ? root.t("backToCalendar") : root.t("settings")
               foreground: root.contentForeground
               fontFamily: root.iconFontFamily
               onClicked: root.settingsOpen = !root.settingsOpen
@@ -612,7 +712,7 @@ Panel {
 
               PanelToolTip {
                 visible: heroMouse.containsMouse
-                text: qsTr("بازگشت به امروز")
+                text: root.t("backToToday")
                 fontFamily: root.contentFontFamily
               }
             }
@@ -660,7 +760,7 @@ Panel {
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
                   width: parent.width - Style.space(110)
-                  text: root.upcomingEvent ? root.upcomingEvent.title : qsTr("امروز رویداد دیگری نیست")
+                  text: root.upcomingEvent ? root.upcomingEvent.title : root.t("nothingElseToday")
                   color: root.upcomingEvent
                     ? root.contentForeground
                     : Qt.darker(root.contentForeground, 1.9)
@@ -686,7 +786,7 @@ Panel {
 
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
-                  text: qsTr("متولد")
+                  text: root.t("born")
                   color: Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -696,7 +796,7 @@ Panel {
                   id: bornField
                   width: Style.space(70)
                   anchors.verticalCenter: parent.verticalCenter
-                  placeholderText: qsTr("سال")
+                  placeholderText: root.t("yearPlaceholder")
                   foreground: root.contentForeground
                   font.family: root.contentFontFamily
 
@@ -706,7 +806,7 @@ Panel {
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
                   leftPadding: Style.space(6)
-                  text: qsTr("تا سن")
+                  text: root.t("liveTo")
                   color: Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -729,7 +829,7 @@ Panel {
                 visible: root.showYearProgress && !root.editingLife
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.num(root.todayJalali.jy)
+                text: root.num(root.todayCivil.year)
                 color: Qt.darker(root.contentForeground, 1.5)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -793,7 +893,7 @@ Panel {
                 id: lifeLabel
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("زندگی")
+                text: root.t("life")
                 color: Qt.darker(root.contentForeground, 1.5)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -843,7 +943,7 @@ Panel {
 
                 PanelToolTip {
                   visible: lifeMouse.containsMouse
-                  text: qsTr("یادِ مرگ")
+                  text: root.t("mementoMori")
                   fontFamily: root.contentFontFamily
                 }
               }
@@ -893,7 +993,7 @@ Panel {
 
                   Text {
                     anchors.centerIn: parent
-                    text: qsTr("هفته")
+                    text: root.t("weekHeader")
                     color: weekStartMouse.containsMouse
                       ? Style.hoverStateColor(root.contentForeground, Color.accent)
                       : Qt.darker(root.contentForeground, 1.9)
@@ -912,7 +1012,7 @@ Panel {
 
                   PanelToolTip {
                     visible: weekStartMouse.containsMouse
-                    text: qsTr("شروع هفته از %1").arg(root.nextWeekStartLabel)
+                    text: root.t("weekStartTooltip").arg(root.nextWeekStartLabel)
                     fontFamily: root.contentFontFamily
                   }
                 }
@@ -932,7 +1032,7 @@ Panel {
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     text: root.weekdayLabel(modelData)
-                    color: Model.isWeekendDay(modelData, root.thursdayWeekend)
+                    color: Model.isWeekendDay(root.calendar, modelData, { thursdayWeekend: root.thursdayWeekend })
                       ? Qt.darker(root.contentForeground, 1.9)
                       : Qt.darker(root.contentForeground, 1.5)
                     font.family: root.contentFontFamily
@@ -993,7 +1093,7 @@ Panel {
                         // days that have any, so an empty month does not
                         // shift under the cursor.
                         anchors.verticalCenterOffset: modelData.hasEvent ? -Style.space(3) : 0
-                        text: root.num(modelData.jd)
+                        text: root.num(modelData.civilDay)
                         color: modelData.inMonth
                           ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
                           : Qt.darker(root.contentForeground, 2.2)
@@ -1078,7 +1178,7 @@ Panel {
                 // "دی ۱۴۰۵" and an "اردیبهشت ۱۴۰۵".
                 width: Style.space(160)
                 horizontalAlignment: Text.AlignHCenter
-                text: Model.monthName(root.viewMonth) + " " + root.num(root.viewYear)
+                text: Model.monthName(root.calendar, root.viewMonth, root.localeNames) + " " + root.num(root.viewYear)
                 color: Qt.darker(root.contentForeground, 1.4)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -1096,7 +1196,7 @@ Panel {
                 anchors.leftMargin: -Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
                 iconText: root.rtl ? "󰅂" : "󰅁"
-                tooltipText: qsTr("ماه قبل")
+                tooltipText: root.t("previousMonth")
                 foreground: root.contentForeground
                 fontFamily: root.iconFontFamily
                 onClicked: root.moveMonth(-1)
@@ -1107,7 +1207,7 @@ Panel {
                 anchors.rightMargin: -Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
                 iconText: root.rtl ? "󰅁" : "󰅂"
-                tooltipText: qsTr("ماه بعد")
+                tooltipText: root.t("nextMonth")
                 foreground: root.contentForeground
                 fontFamily: root.iconFontFamily
                 onClicked: root.moveMonth(1)
@@ -1197,7 +1297,7 @@ Panel {
                   Text {
                     id: joinLabel
                     anchors.centerIn: parent
-                    text: qsTr("پیوستن")
+                    text: root.t("join")
                     color: joinHover.hovered ? Color.background : Qt.darker(root.contentForeground, 1.4)
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption
@@ -1234,7 +1334,7 @@ Panel {
                     width: Style.space(52)
                     horizontalAlignment: Text.AlignHCenter
                     text: eventRow.modelData.allDay
-                      ? qsTr("تمام‌روز")
+                      ? root.t("allDay")
                       : root.formatDate(new Date(eventRow.modelData.start), "HH:mm")
                     color: Qt.darker(root.contentForeground, eventRow.declined ? 2.2 : 1.5)
                     font.family: root.contentFontFamily
@@ -1263,8 +1363,8 @@ Panel {
                       width: parent.width
                       visible: text !== ""
                       text: {
-                        if (eventRow.declined) return qsTr("رد شده")
-                        if (Model.isOutOfOffice(eventRow.modelData)) return qsTr("خارج از دفتر")
+                        if (eventRow.declined) return root.t("declined")
+                        if (Model.isOutOfOffice(eventRow.modelData)) return root.t("outOfOffice")
                         return eventRow.modelData.location
                       }
                       color: Qt.darker(root.contentForeground, 1.9)
@@ -1299,14 +1399,14 @@ Panel {
               readonly property string message: {
                 if (root.syncState === "missing") {
                   return root.setupCommandCopied
-                    ? qsTr("کپی شد. در ترمینال اجرا کنید:")
-                    : qsTr("هنوز تقویمی همگام‌سازی نشده. برای کپی کلیک کنید، سپس اجرا کنید:")
+                    ? root.t("copiedRun")
+                    : root.t("noSyncRun")
                 }
                 if (root.syncState === "version")
-                  return qsTr("فایل رویدادها را نسخهٔ جدیدتری نوشته است. افزونه را به‌روز کنید.")
+                  return root.t("versionNewer")
                 if (root.syncState === "stale")
-                  return qsTr("ممکن است تقویم به‌روز نباشد. بررسی کنید:")
-                return qsTr("رویدادی ثبت نشده")
+                  return root.t("staleCheck")
+                return root.t("nothingScheduled")
               }
 
               readonly property string command: {
@@ -1371,7 +1471,8 @@ Panel {
             showYearProgress: root.showYearProgress
             showWorkingLocation: root.showWorkingLocation
             hideDeclined: root.hideDeclined
-            weekStartsSaturday: root.weekStart === Model.SATURDAY
+            calendar: root.calendar
+            weekStartsOnDefault: root.weekStart === Model.defaultWeekStart(root.calendar)
             thursdayWeekend: root.thursdayWeekend
             persianDigits: root.persianDigits
             rightToLeft: root.rtl
@@ -1384,10 +1485,11 @@ Panel {
             eventCount: root.eventDoc && root.eventDoc.events ? root.eventDoc.events.length : 0
             sourceLabel: root.eventDoc ? String(root.eventDoc.source || "") : ""
             syncedAt: root.eventDoc && root.eventDoc.syncedAt
-              ? root.formatDate(new Date(root.eventDoc.syncedAt), "d MMMM 'ساعت' HH:mm")
+              ? root.formatDate(new Date(root.eventDoc.syncedAt), "d MMMM '" + root.t("atTime") + "' HH:mm")
               : ""
 
-            onCalendarToggled: function(calendarId) { root.toggleCalendar(calendarId) }
+            onCalendarToggled: function(calendarId) { root.toggleCalendarVisibility(calendarId) }
+            onCalendarSystemPicked: function(system) { root.setCalendar(system) }
             onYearProgressToggled: root.toggleYearProgress()
             onWorkingLocationToggled: root.toggleWorkingLocation()
             onHideDeclinedToggled: root.toggleHideDeclined()

@@ -201,16 +201,16 @@ var SATURDAY = 6
 var FRIDAY = 5
 var THURSDAY = 4
 
-function monthName(jm) {
+function jalaliMonthName(jm) {
   var index = Math.round(Number(jm)) - 1
   return JALALI_MONTHS[index] || ""
 }
 
-function weekdayName(weekday) {
+function persianWeekdayName(weekday) {
   return WEEKDAYS[((Math.round(Number(weekday)) % 7) + 7) % 7] || ""
 }
 
-function weekdayShortName(weekday) {
+function persianWeekdayShortName(weekday) {
   return WEEKDAYS_SHORT[((Math.round(Number(weekday)) % 7) + 7) % 7] || ""
 }
 
@@ -258,12 +258,394 @@ function jalaliWeek(jy, jm, jd) {
   return Math.floor((jalaliDayOfYear(owner.jy, owner.jm, owner.jd) - 1 + offset) / 7) + 1
 }
 
+// ============================================================================
+// Section 2 -- Gregorian calendar arithmetic
+// ============================================================================
+//
+// The other calendar this widget can be switched into, so it can stand in for
+// Omarchy's built-in clock rather than sitting beside it. Written in the same
+// shape as the Jalali section above -- 1-based months, JS weekday indices --
+// so the dispatch layer below can treat the two as interchangeable instead of
+// special-casing one of them at every call.
+
+var MS_PER_DAY = 86400000
+
+function isGregorianLeapYear(gy) {
+  var year = Math.round(Number(gy))
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+}
+
+var GREGORIAN_MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+function gregorianMonthLength(gy, gm) {
+  var month = Math.round(Number(gm))
+  if (!isFinite(month) || month < 1 || month > 12) return 0
+  if (month === 2 && isGregorianLeapYear(gy)) return 29
+  return GREGORIAN_MONTH_LENGTHS[month - 1]
+}
+
+function gregorianDaysInYear(gy) {
+  return isGregorianLeapYear(gy) ? 366 : 365
+}
+
+function gregorianDayOfYear(gy, gm, gd) {
+  var month = Math.round(Number(gm))
+  var total = Number(gd)
+  for (var i = 1; i < month; i++) total += gregorianMonthLength(gy, i)
+  return total
+}
+
+function gregorianFromDate(date) {
+  return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() }
+}
+
+function dateFromGregorian(gy, gm, gd) {
+  return new Date(gy, gm - 1, gd)
+}
+
+// ISO-8601 week number: the week owning the Thursday of that date's
+// Monday-based week. This is the built-in clock's 'ww' token, kept exactly,
+// so switching this widget to Gregorian gives back the same numbers the
+// widget it replaces was giving.
+function isoWeek(gy, gm, gd) {
+  var date = new Date(Date.UTC(gy, gm - 1, gd))
+  var weekday = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - weekday)
+  var yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  return Math.ceil(((date.getTime() - yearStart.getTime()) / MS_PER_DAY + 1) / 7)
+}
+
+var GREGORIAN_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+]
+
+var GREGORIAN_MONTHS_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+]
+
+// Indexed by JS Date.getDay(), like every other weekday table here.
+var GREGORIAN_WEEKDAYS = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
+]
+
+var GREGORIAN_WEEKDAYS_SHORT = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+
+// ============================================================================
+// Section 3 -- One widget, two calendars
+// ============================================================================
+//
+// Everything above is arithmetic on one calendar or the other. Everything
+// below asks this layer instead, so the panel and the bar never branch on
+// which calendar is active: they pass it down and get answers back.
+//
+// The choice carries more than month names with it. A Jalali calendar that
+// opened its weeks on Monday, numbered them ISO, wrote its digits in Latin
+// and laid itself out left to right would be a Gregorian calendar wearing
+// Persian labels. So the calendar picks the week start, the weekend, the week
+// numbering, the digits, the reading direction and the interface language --
+// and every one of those stays overridable on its own, because the defaults
+// are a starting point and not a claim about how anyone works.
+
+var JALALI = "jalali"
+var GREGORIAN = "gregorian"
+
+function normalizeCalendar(value) {
+  var text = String(value === undefined || value === null ? "" : value)
+    .replace(/^\s+|\s+$/g, "").toLowerCase()
+  // "miladi" and "shamsi" are what these two are called in Persian, and
+  // shell.json is hand-edited often enough for that to be worth accepting.
+  if (text === GREGORIAN || text === "miladi" || text === "gregorian") return GREGORIAN
+  return JALALI
+}
+
+function isJalali(calendar) {
+  return normalizeCalendar(calendar) === JALALI
+}
+
+function otherCalendar(calendar) {
+  return isJalali(calendar) ? GREGORIAN : JALALI
+}
+
+// A civil date -- { year, month, day } with a 1-based month -- in whichever
+// calendar was asked for. The Date it came from is untouched: a calendar is
+// a way of naming a day, never the day itself.
+function fromDate(calendar, date) {
+  if (!isJalali(calendar)) return gregorianFromDate(date)
+  var j = jalaliFromDate(date)
+  return j ? { year: j.jy, month: j.jm, day: j.jd } : null
+}
+
+function toDate(calendar, year, month, day) {
+  return isJalali(calendar)
+    ? dateFromJalali(year, month, day)
+    : dateFromGregorian(year, month, day)
+}
+
+function monthLength(calendar, year, month) {
+  return isJalali(calendar)
+    ? jalaliMonthLength(year, month)
+    : gregorianMonthLength(year, month)
+}
+
+function daysInYear(calendar, year) {
+  return isJalali(calendar) ? jalaliDaysInYear(year) : gregorianDaysInYear(year)
+}
+
+function dayOfYear(calendar, year, month, day) {
+  return isJalali(calendar)
+    ? jalaliDayOfYear(year, month, day)
+    : gregorianDayOfYear(year, month, day)
+}
+
+// Two genuinely different definitions, not one with the names swapped. The
+// Jalali count restarts at Nowruz and runs Saturday to Friday with no
+// four-day rule; ISO restarts in January and runs Monday to Sunday with one.
+function weekOfYear(calendar, year, month, day) {
+  return isJalali(calendar)
+    ? jalaliWeek(year, month, day)
+    : isoWeek(year, month, day)
+}
+
+// Saturday opens the Iranian week. Monday opens the ISO one, which is what
+// the built-in clock defaulted to through Qt's locale.
+function defaultWeekStart(calendar) {
+  return isJalali(calendar) ? SATURDAY : 1
+}
+
+// Friday in Iran, Saturday and Sunday elsewhere. Thursday is offered as an
+// extra rather than assumed, because whether it is a working day is a real
+// disagreement in Iran and not a preference: banks and schools are shut,
+// plenty of private offices are not.
+function isWeekendDay(calendar, weekday, options) {
+  var day = ((Math.round(Number(weekday)) % 7) + 7) % 7
+  var opts = options || {}
+
+  if (!isJalali(calendar)) return day === 0 || day === SATURDAY
+  if (day === FRIDAY) return true
+  return opts.thursdayWeekend === true && day === THURSDAY
+}
+
+function usesPersianDigitsByDefault(calendar) {
+  return isJalali(calendar)
+}
+
+function isRightToLeftByDefault(calendar) {
+  return isJalali(calendar)
+}
+
+// A setting that is unset should follow the calendar rather than sit on a
+// hardcoded default, so switching calendars moves everything that ought to
+// move. An explicit true or false always wins, so a deliberate choice is
+// never undone by a later switch.
+function resolveBoolean(value, fallback) {
+  if (value === true || value === false) return value
+  if (value === "true") return true
+  if (value === "false") return false
+  return fallback === true
+}
+
+// ---- Names.
+//
+// `overrides` exists for one case: in Gregorian mode the panel hands in
+// Qt.locale()'s own month and day names, so a desktop running in French
+// keeps reading French, exactly as the built-in clock did. Model.js stays
+// locale-free and testable; the locale stays where the locale lives.
+function calendarNames(calendar, overrides) {
+  var base = isJalali(calendar)
+    ? {
+        months: JALALI_MONTHS,
+        // Persian month names have no accepted abbreviation, so the short
+        // form is the long one. Inventing "فرو" would only be harder to read.
+        monthsShort: JALALI_MONTHS,
+        weekdays: WEEKDAYS,
+        weekdaysShort: WEEKDAYS_SHORT
+      }
+    : {
+        months: GREGORIAN_MONTHS,
+        monthsShort: GREGORIAN_MONTHS_SHORT,
+        weekdays: GREGORIAN_WEEKDAYS,
+        weekdaysShort: GREGORIAN_WEEKDAYS_SHORT
+      }
+
+  var over = overrides || {}
+  return {
+    months: over.months && over.months.length === 12 ? over.months : base.months,
+    monthsShort: over.monthsShort && over.monthsShort.length === 12 ? over.monthsShort : base.monthsShort,
+    weekdays: over.weekdays && over.weekdays.length === 7 ? over.weekdays : base.weekdays,
+    weekdaysShort: over.weekdaysShort && over.weekdaysShort.length === 7 ? over.weekdaysShort : base.weekdaysShort
+  }
+}
+
+function monthName(calendar, month, overrides) {
+  var index = Math.round(Number(month)) - 1
+  return calendarNames(calendar, overrides).months[index] || ""
+}
+
+function weekdayName(calendar, weekday, overrides) {
+  var index = ((Math.round(Number(weekday)) % 7) + 7) % 7
+  return calendarNames(calendar, overrides).weekdays[index] || ""
+}
+
+function weekdayShortName(calendar, weekday, overrides) {
+  var index = ((Math.round(Number(weekday)) % 7) + 7) % 7
+  return calendarNames(calendar, overrides).weekdaysShort[index] || ""
+}
+
+// ---- Interface strings.
+//
+// A table rather than qsTr, because the language here follows the calendar
+// rather than the desktop: switching to Gregorian is how this widget stands
+// in for the built-in clock, and a Persian "Settings" button on that clock
+// would be the wrong answer. There are no translation files to ship and no
+// lupdate step to forget.
+var STRINGS = {}
+
+STRINGS[JALALI] = {
+  settings: "تنظیمات",
+  backToCalendar: "بازگشت به تقویم",
+  backToToday: "بازگشت به امروز",
+  nothingElseToday: "امروز رویداد دیگری نیست",
+  born: "متولد",
+  yearPlaceholder: "سال",
+  liveTo: "تا سن",
+  life: "زندگی",
+  mementoMori: "یادِ مرگ",
+  weekHeader: "هفته",
+  weekStartTooltip: "شروع هفته از %1",
+  previousMonth: "ماه قبل",
+  nextMonth: "ماه بعد",
+  join: "پیوستن",
+  allDay: "تمام‌روز",
+  declined: "رد شده",
+  outOfOffice: "خارج از دفتر",
+  nothingScheduled: "رویدادی ثبت نشده",
+  atTime: "ساعت",
+  countdownNow: "هم‌اکنون",
+
+  copiedRun: "کپی شد. در ترمینال اجرا کنید:",
+  noSyncRun: "هنوز تقویمی همگام‌سازی نشده. برای کپی کلیک کنید، سپس اجرا کنید:",
+  noSyncConnect: "هنوز تقویمی وصل نشده. برای کپی کلیک کنید، سپس اجرا کنید:",
+  versionNewer: "فایل رویدادها را نسخهٔ جدیدتری نوشته است. افزونه را به‌روز کنید.",
+  versionNewerShort: "فایل رویدادها را نسخهٔ جدیدتری از این افزونه نوشته است.",
+  staleCheck: "ممکن است تقویم به‌روز نباشد. بررسی کنید:",
+  staleCheckShort: "آخرین همگام‌سازی قدیمی به نظر می‌رسد. بررسی کنید:",
+
+  calendarsTitle: "تقویم‌ها",
+  nothingSynced: "هنوز چیزی همگام‌سازی نشده، پس چیزی برای انتخاب نیست.",
+  calendarSystemTitle: "تقویم",
+  calendarSystemHint: "کل ویجت عوض می‌شود: نام ماه‌ها، شروع هفته، تعطیلی، شمارهٔ هفته، ارقام و جهت چیدمان.",
+  jalaliOption: "شمسی",
+  gregorianOption: "میلادی",
+  displayTitle: "نمایش",
+  weekStartsLabel: "شروع هفته از شنبه",
+  weekStartsHint: "خاموش یعنی هفته از دوشنبه شروع می‌شود",
+  thursdayWeekend: "پنجشنبه هم تعطیل است",
+  thursdayWeekendHint: "جمعه همیشه تعطیل در نظر گرفته می‌شود",
+  persianDigitsLabel: "ارقام فارسی",
+  persianDigitsHint: "خاموش یعنی ارقام لاتین: ۱۴۰۵ در برابر 1405",
+  rtlLabel: "چیدمان راست‌به‌چپ",
+  rtlHint: "خاموش یعنی همان چیدمان چپ‌به‌راست تقویم اصلی",
+  workingLocation: "رویدادهای محل کار",
+  workingLocationHint: "نشانه‌های دورکاری گوگل، به‌صورت پیش‌فرض پنهان",
+  declinedInvitations: "دعوت‌های رد شده",
+  declinedInvitationsHint: "وقتی روشن است، خط‌خورده نمایش داده می‌شوند",
+  yearLifeProgress: "نوار سال و زندگی",
+  yearLifeProgressHint: "نوارهای ساعت اصلی اُمارچی، پیش‌فرض خاموش",
+  barLabelTitle: "برچسب نوار",
+  barLabelHint: "چند دقیقه مانده به رویداد، نوار ساعت را کنار بگذارد و آن را اعلام کند.",
+  never: "هرگز",
+  minutesSuffix: " دقیقه",
+  syncTitle: "همگام‌سازی",
+  syncCount: "%1 رویداد از %2",
+  syncLast: "آخرین همگام‌سازی %1"
+}
+
+STRINGS[GREGORIAN] = {
+  settings: "Settings",
+  backToCalendar: "Back to calendar",
+  backToToday: "Back to today",
+  nothingElseToday: "Nothing else today",
+  born: "BORN",
+  yearPlaceholder: "year",
+  liveTo: "LIVE TO",
+  life: "LIFE",
+  mementoMori: "Memento Mori",
+  weekHeader: "W",
+  weekStartTooltip: "Start weeks on %1",
+  previousMonth: "Previous month",
+  nextMonth: "Next month",
+  join: "Join",
+  allDay: "All day",
+  declined: "Declined",
+  outOfOffice: "Out of office",
+  nothingScheduled: "Nothing scheduled",
+  atTime: "at",
+  countdownNow: "now",
+
+  copiedRun: "Copied. Paste it in a terminal:",
+  noSyncRun: "No calendar synced yet. Click to copy, then run:",
+  noSyncConnect: "No calendar connected yet. Click to copy, then run:",
+  versionNewer: "Events file was written by a newer version. Update the plugin.",
+  versionNewerShort: "The events file was written by a newer version of this plugin.",
+  staleCheck: "Calendar may be out of date. Check:",
+  staleCheckShort: "Last sync looks old. Check:",
+
+  calendarsTitle: "CALENDARS",
+  nothingSynced: "Nothing synced yet, so there is nothing to choose from.",
+  calendarSystemTitle: "CALENDAR",
+  calendarSystemHint: "Switches the whole widget: month names, week start, weekend, week numbers, digits and reading direction.",
+  jalaliOption: "Jalali",
+  gregorianOption: "Gregorian",
+  displayTitle: "DISPLAY",
+  weekStartsLabel: "Week starts on Monday",
+  weekStartsHint: "Off starts the week on Sunday",
+  thursdayWeekend: "Thursday is a weekend too",
+  thursdayWeekendHint: "Only applies to the Jalali calendar",
+  persianDigitsLabel: "Persian digits",
+  persianDigitsHint: "Off uses Latin digits: 2026 rather than ۲۰۲۶",
+  rtlLabel: "Right-to-left layout",
+  rtlHint: "Off is the usual left-to-right layout",
+  workingLocation: "Working location events",
+  workingLocationHint: "Google's work-from-home markers, hidden by default",
+  declinedInvitations: "Declined invitations",
+  declinedInvitationsHint: "Shown struck through when on",
+  yearLifeProgress: "Year and life progress",
+  yearLifeProgressHint: "The upstream clock's bars, off by default",
+  barLabelTitle: "BAR LABEL",
+  barLabelHint: "How early the bar gives up the clock to announce what is next.",
+  never: "Never",
+  minutesSuffix: "min",
+  syncTitle: "SYNC",
+  syncCount: "%1 events from %2",
+  syncLast: "Last sync %1"
+}
+
+function text(calendar, key) {
+  var table = STRINGS[normalizeCalendar(calendar)] || STRINGS[JALALI]
+  var value = table[key]
+  return value === undefined ? "" : value
+}
+
+// Exported so a test can hold the two tables against each other. A key
+// present in one and missing from the other renders as an empty label --
+// a blank button rather than a crash, which is exactly the kind of thing
+// no other test would notice.
+function stringKeys(calendar) {
+  var table = STRINGS[normalizeCalendar(calendar)] || STRINGS[JALALI]
+  var keys = []
+  for (var key in table) keys.push(key)
+  return keys.sort()
+}
+
 // ---- Formatting.
 //
-// Qt's format tokens, so a format string written for the upstream clock keeps
-// meaning what it meant -- MMMM is still the month name, it is just a Jalali
-// one now. Implemented here rather than handed to Qt.formatDateTime because
-// Qt has no Jalali calendar and would answer in Gregorian.
+// Qt's format tokens, resolved against whichever calendar is active, so one
+// format string in shell.json keeps meaning what it meant across a switch --
+// MMMM is still the month name, it is just a different calendar's now.
+// Implemented here rather than handed to Qt.formatDateTime because Qt has no
+// Jalali calendar and would answer every one of these in Gregorian.
 
 function pad2(value) {
   var n = Math.abs(Math.round(Number(value)))
@@ -283,18 +665,16 @@ var TOKENS = [
 
 function tokenValue(token, parts) {
   switch (token) {
-    case "yyyy": return String(parts.jy)
-    case "yy": return pad2(parts.jy % 100)
-    case "MMMM": return monthName(parts.jm)
-    // Persian month names have no accepted abbreviation, so the short form is
-    // the long one. Inventing "فرو" would only make the grid harder to read.
-    case "MMM": return monthName(parts.jm)
-    case "MM": return pad2(parts.jm)
-    case "M": return String(parts.jm)
-    case "dddd": return weekdayName(parts.weekday)
-    case "ddd": return weekdayShortName(parts.weekday)
-    case "dd": return pad2(parts.jd)
-    case "d": return String(parts.jd)
+    case "yyyy": return String(parts.year)
+    case "yy": return pad2(parts.year % 100)
+    case "MMMM": return parts.names.months[parts.month - 1] || ""
+    case "MMM": return parts.names.monthsShort[parts.month - 1] || ""
+    case "MM": return pad2(parts.month)
+    case "M": return String(parts.month)
+    case "dddd": return parts.names.weekdays[parts.weekday] || ""
+    case "ddd": return parts.names.weekdaysShort[parts.weekday] || ""
+    case "dd": return pad2(parts.day)
+    case "d": return String(parts.day)
     case "HH": return pad2(parts.hours)
     case "H": return String(parts.hours)
     case "hh": return pad2(parts.hours12)
@@ -306,53 +686,65 @@ function tokenValue(token, parts) {
     case "ww": return pad2(parts.week)
     case "w": return String(parts.week)
     case "AP":
-    case "A": return parts.hours < 12 ? "ق.ظ" : "ب.ظ"
+    case "A":
     case "ap":
-    case "a": return parts.hours < 12 ? "ق.ظ" : "ب.ظ"
+    case "a":
+      return parts.calendar === JALALI
+        ? (parts.hours < 12 ? "ق.ظ" : "ب.ظ")
+        : (parts.hours < 12 ? "AM" : "PM")
     default: return token
   }
 }
 
-function dateParts(date) {
-  var jalali = jalaliFromDate(date)
-  if (!jalali) return null
+function dateParts(calendar, date, names) {
+  var civil = fromDate(calendar, date)
+  if (!civil) return null
+
   var hours = date.getHours()
   return {
-    jy: jalali.jy,
-    jm: jalali.jm,
-    jd: jalali.jd,
+    calendar: normalizeCalendar(calendar),
+    names: calendarNames(calendar, names),
+    year: civil.year,
+    month: civil.month,
+    day: civil.day,
     weekday: date.getDay(),
     hours: hours,
     hours12: (hours % 12) === 0 ? 12 : (hours % 12),
     minutes: date.getMinutes(),
     seconds: date.getSeconds(),
-    week: jalaliWeek(jalali.jy, jalali.jm, jalali.jd)
+    week: weekOfYear(calendar, civil.year, civil.month, civil.day)
   }
 }
 
-// Single quotes escape a literal run, and '' is a literal quote, both inside
-// and outside a run -- Qt's rules, so "'هفته'ww" and "''yy" keep working.
-function format(date, pattern, persianDigits) {
-  var parts = dateParts(date)
+// `options` is { calendar, persianDigits, names }, every field optional. An
+// omitted calendar means Jalali and omitted digits follow the calendar, so a
+// bare two-argument call still does the obvious thing.
+function format(date, pattern, options) {
+  var opts = options || {}
+  var calendar = normalizeCalendar(opts.calendar)
+  var parts = dateParts(calendar, date, opts.names)
   if (!parts) return ""
 
-  var text = String(pattern === undefined || pattern === null ? "" : pattern)
+  var input = String(pattern === undefined || pattern === null ? "" : pattern)
   var out = ""
   var i = 0
 
-  while (i < text.length) {
-    var ch = text.charAt(i)
+  while (i < input.length) {
+    var ch = input.charAt(i)
 
+    // Single quotes escape a literal run, and '' is a literal quote, both
+    // inside and outside a run -- Qt's rules, so "'هفته'ww" and "''yy" keep
+    // working.
     if (ch === "'") {
-      if (text.charAt(i + 1) === "'") { out += "'"; i += 2; continue }
+      if (input.charAt(i + 1) === "'") { out += "'"; i += 2; continue }
       i += 1
-      while (i < text.length) {
-        if (text.charAt(i) === "'") {
-          if (text.charAt(i + 1) === "'") { out += "'"; i += 2; continue }
+      while (i < input.length) {
+        if (input.charAt(i) === "'") {
+          if (input.charAt(i + 1) === "'") { out += "'"; i += 2; continue }
           i += 1
           break
         }
-        out += text.charAt(i)
+        out += input.charAt(i)
         i += 1
       }
       continue
@@ -361,7 +753,7 @@ function format(date, pattern, persianDigits) {
     var matched = ""
     for (var t = 0; t < TOKENS.length; t++) {
       var token = TOKENS[t]
-      if (text.substr(i, token.length) === token) { matched = token; break }
+      if (input.substr(i, token.length) === token) { matched = token; break }
     }
 
     if (matched === "") { out += ch; i += 1; continue }
@@ -369,14 +761,14 @@ function format(date, pattern, persianDigits) {
     i += matched.length
   }
 
-  return persianDigits === false ? out : toPersianDigits(out)
+  return resolveBoolean(opts.persianDigits, usesPersianDigitsByDefault(calendar))
+    ? toPersianDigits(out)
+    : out
 }
 
 // ============================================================================
-// Section 2 -- The widget's own model
+// Section 4 -- The widget's own model
 // ============================================================================
-
-var MS_PER_DAY = 86400000
 
 // Weekday indices match both JS Date.getDay() and QML's Locale.Sunday…
 // Locale.Saturday, so a locale's firstDayOfWeek can be passed straight in.
@@ -392,7 +784,9 @@ var WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "fr
 // the other is a single right click rather than a lap of the ring. The
 // numeric yyyy/MM/dd preset has no twin: it is the form used on forms and
 // invoices, which is not written with ق.ظ after it.
-var CLOCK_FORMATS = [
+var CLOCK_FORMATS = {}
+
+CLOCK_FORMATS[JALALI] = [
   "dddd HH:mm",
   "dddd h:mm AP",
   "HH:mm",
@@ -403,18 +797,41 @@ var CLOCK_FORMATS = [
   "yyyy/MM/dd HH:mm"
 ]
 
+// The built-in clock's own ring, so switching to Gregorian gives back the
+// formats the widget it replaces offered, in the order it offered them.
+CLOCK_FORMATS[GREGORIAN] = [
+  "dddd HH:mm",
+  "dddd h:mm AP",
+  "HH:mm",
+  "h:mm AP",
+  "ddd d MMM HH:mm",
+  "ddd d MMM h:mm AP",
+  "d MMMM 'W'ww yyyy",
+  "yyyy-MM-dd HH:mm"
+]
+
 // Vertical bars have room for a few stacked lines and nothing else, so the
 // ring stays short. AM/PM costs a fourth line, which is why only the plain
 // time carries it here.
-var VERTICAL_CLOCK_FORMATS = [
+var VERTICAL_CLOCK_FORMATS = {}
+
+VERTICAL_CLOCK_FORMATS[JALALI] = [
   "HH\n—\nmm",
   "h\n—\nmm\nAP",
   "dd\nMMM\nyy",
   "HH\nmm"
 ]
 
-function clockFormats(vertical) {
-  return vertical ? VERTICAL_CLOCK_FORMATS.slice() : CLOCK_FORMATS.slice()
+VERTICAL_CLOCK_FORMATS[GREGORIAN] = [
+  "HH\n—\nmm",
+  "h\n—\nmm\nAP",
+  "dd\nMMM\n'W'ww\n''yy",
+  "HH\nmm"
+]
+
+function clockFormats(vertical, calendar) {
+  var table = vertical ? VERTICAL_CLOCK_FORMATS : CLOCK_FORMATS
+  return (table[normalizeCalendar(calendar)] || []).slice()
 }
 
 // The presets in a fixed order, plus the configured alternate and current
@@ -493,10 +910,10 @@ function coerceWeekStart(value) {
   return isFinite(parsed) ? ((parsed % 7) + 7) % 7 : null
 }
 
-// Configured week start, falling back to Saturday. Unlike the upstream clock
-// this does not defer to Qt's locale: a Jalali calendar whose week started on
-// Monday because the desktop is in en_US would be wrong in the one way this
-// widget exists to fix.
+// Configured week start, falling back to whatever the active calendar opens
+// its weeks on. Unlike the built-in clock this never defers to Qt's locale:
+// a Jalali calendar laid out Monday-first because the desktop is in en_US
+// would be wrong in the one way this widget exists to fix.
 function normalizedWeekStart(value, fallback) {
   var configured = coerceWeekStart(value)
   if (configured !== null) return configured
@@ -508,41 +925,35 @@ function weekStartSettingName(index) {
   return WEEKDAY_NAMES[normalizedWeekStart(index, SATURDAY)]
 }
 
-// Saturday is the Iranian week; Monday is the one people who also live in a
-// work calendar with the rest of the world reach for. Those are the two worth
-// a one-click toggle, and a calendar configured to anything else is shown as
-// it is and lands on Saturday the first time it is toggled.
-function toggledWeekStart(index) {
-  return normalizedWeekStart(index, SATURDAY) === SATURDAY ? 1 : SATURDAY
+// Each calendar toggles between the two starts people actually switch
+// between in it: Saturday and Monday under Jalali, Monday and Sunday under
+// Gregorian. A calendar configured to anything else is shown as it is and
+// lands on its own default the first time it is toggled.
+function toggledWeekStart(index, calendar) {
+  var start = normalizedWeekStart(index, defaultWeekStart(calendar))
+  if (isJalali(calendar)) return start === SATURDAY ? 1 : SATURDAY
+  return start === 1 ? 0 : 1
 }
 
-function weekdayOrder(weekStart) {
-  var start = normalizedWeekStart(weekStart, SATURDAY)
+function weekdayOrder(weekStart, calendar) {
+  var start = normalizedWeekStart(weekStart, defaultWeekStart(calendar))
   var out = []
   for (var i = 0; i < 7; i++) out.push((start + i) % 7)
   return out
 }
 
-// Friday is the weekend. Thursday is optional because whether it is a working
-// day is a real disagreement in Iran rather than a preference: banks and
-// schools are shut, plenty of private offices are not.
-function isWeekendDay(weekday, thursdayOff) {
-  var day = ((Math.round(Number(weekday)) % 7) + 7) % 7
-  if (day === FRIDAY) return true
-  return thursdayOff === true && day === THURSDAY
-}
+// ---- Year progress, measured on whichever year is on screen. Under Jalali
+//      the bar empties at Nowruz rather than in January, which is the whole
+//      reason it is not simply the Gregorian one relabelled.
 
-// ---- Year progress, measured on the Jalali year: Farvardin 1 reads 0% and
-//      Esfand 29 reads 100%, which is what a year ending at Nowruz means.
-
-function yearProgress(jy, jm, jd) {
-  var total = jalaliDaysInYear(jy)
+function yearProgress(calendar, year, month, day) {
+  var total = daysInYear(calendar, year)
   if (total <= 0) return 0
-  return Math.max(0, Math.min(1, (jalaliDayOfYear(jy, jm, jd) - 1) / total))
+  return Math.max(0, Math.min(1, (dayOfYear(calendar, year, month, day) - 1) / total))
 }
 
-function yearProgressPercent(jy, jm, jd) {
-  return Math.round(yearProgress(jy, jm, jd) * 100)
+function yearProgressPercent(calendar, year, month, day) {
+  return Math.round(yearProgress(calendar, year, month, day) * 100)
 }
 
 // Memento mori. The default span is a round number rather than anything from
@@ -551,11 +962,15 @@ function yearProgressPercent(jy, jm, jd) {
 var DEFAULT_LIFE_EXPECTANCY = 90
 
 // A birth year rather than an age, so the bar keeps counting on its own
-// instead of going stale the moment it is entered. A Jalali year, because it
-// is the year an Iranian knows their own birth by. 0 means "not set", which
+// instead of going stale the moment it is entered. 0 means "not set", which
 // is also what a blank, malformed, future, or implausibly distant year means.
 // Persian digits are accepted: the field is typed into with a Persian
 // keyboard as often as not.
+//
+// The year is read and written in whatever calendar is on screen -- an
+// Iranian knows their birth year as 1358, not 1979 -- so `currentYear` is the
+// current year in that same calendar. Storage is a separate question, handled
+// by the pair below.
 function parseBirthYear(value, currentYear) {
   var now = Math.round(Number(currentYear))
   if (!isFinite(now)) return 0
@@ -567,7 +982,8 @@ function parseBirthYear(value, currentYear) {
 }
 
 // Whole years, the way people say their age: born in 1358 makes you 47 for
-// all of 1405, whichever side of your birthday today falls.
+// all of 1405, whichever side of your birthday today falls. Both arguments
+// are in the same calendar, so the answer is the same in either.
 function ageFromBirthYear(birthYear, currentYear) {
   var born = parseBirthYear(birthYear, currentYear)
   if (born <= 0) return 0
@@ -605,19 +1021,47 @@ function lifeProgressPercent(age, expectancy) {
   return Math.round(lifeProgress(age, expectancy) * 100)
 }
 
+// The stored birth year is always Gregorian, whichever calendar is on screen,
+// so switching the display never silently invalidates a year someone typed --
+// 1358 read as a Gregorian year would be six centuries ago and parse to
+// "not set".
+//
+// The conversion is the 621-year offset between the two eras, not a real date
+// conversion. A Jalali year straddles two Gregorian ones, so this is wrong by
+// up to a year for anyone born between January and Nowruz. That is the right
+// trade here: the bar measures a lifetime against a nominal span in whole
+// years, and asking for a birth *date* to win back a rounding error nobody
+// can see would be a worse widget.
+var ERA_OFFSET = 621
+
+function birthYearInCalendar(storedYear, calendar) {
+  var year = Math.round(Number(storedYear))
+  if (!isFinite(year) || year <= 0) return 0
+  return isJalali(calendar) ? year - ERA_OFFSET : year
+}
+
+function birthYearToStorage(displayedYear, calendar) {
+  var year = Math.round(Number(displayedYear))
+  if (!isFinite(year) || year <= 0) return 0
+  return isJalali(calendar) ? year + ERA_OFFSET : year
+}
+
 // ---- The month grid.
 //
 // Six rows of seven days, always. A fixed grid keeps the popup exactly the
 // same height in every month, so stepping through the year never makes the
-// panel jump under the pointer. Six is also always enough: the longest Jalali
-// month is 31 days and the most leading blanks a row can carry is six.
+// panel jump under the pointer. Six is also always enough in either calendar:
+// the longest month is 31 days and the most leading blanks a row can carry
+// is six.
 //
-// `jm` is 1-12, the way Jalali months are written everywhere. Only the cell
-// keys stay Gregorian, because that is what the events are filed under.
-function monthGrid(jy, jm, weekStart, todayKey, eventIndex, options) {
+// `month` is 1-12, the way months are written in both calendars. Only the
+// cell *keys* stay Gregorian, always, because that is what the events file is
+// written with -- so switching the calendar on screen never disturbs which
+// events land on which day.
+function monthGrid(calendar, year, month, weekStart, todayKey, eventIndex, options) {
   var opts = options || {}
-  var start = normalizedWeekStart(weekStart, SATURDAY)
-  var first = dateFromJalali(jy, jm, 1)
+  var start = normalizedWeekStart(weekStart, defaultWeekStart(calendar))
+  var first = toDate(calendar, year, month, 1)
   if (!first) return []
 
   var leading = (first.getDay() - start + 7) % 7
@@ -625,31 +1069,37 @@ function monthGrid(jy, jm, weekStart, todayKey, eventIndex, options) {
   var today = String(todayKey || "")
   var weeks = []
 
+  // The day a row's week number is taken from. Jalali weeks are owned by
+  // their Saturday, ISO weeks by their Thursday.
+  var anchorWeekday = isJalali(calendar) ? SATURDAY : 4
+
   for (var w = 0; w < 6; w++) {
     var days = []
-    var saturday = null
+    var anchor = null
+    var opener = null
 
     for (var d = 0; d < 7; d++) {
       var cellYear = cursor.getFullYear()
       var cellMonth = cursor.getMonth()
       var cellDay = cursor.getDate()
       var weekday = cursor.getDay()
-      var jalali = toJalali(cellYear, cellMonth + 1, cellDay)
+      var civil = fromDate(calendar, cursor)
       var key = dateKey(cellYear, cellMonth, cellDay)
 
-      if (weekday === SATURDAY) saturday = jalali
+      if (d === 0) opener = civil
+      if (weekday === anchorWeekday) anchor = civil
 
       days.push({
         key: key,
-        jy: jalali.jy,
-        jm: jalali.jm,
-        jd: jalali.jd,
+        civilYear: civil.year,
+        civilMonth: civil.month,
+        civilDay: civil.day,
         year: cellYear,
         month: cellMonth,
         day: cellDay,
         weekday: weekday,
-        inMonth: jalali.jm === Number(jm) && jalali.jy === Number(jy),
-        weekend: isWeekendDay(weekday, opts.thursdayWeekend),
+        inMonth: civil.month === Number(month) && civil.year === Number(year),
+        weekend: isWeekendDay(calendar, weekday, opts),
         today: key === today,
         hasEvent: eventIndex ? !!eventIndex[key] : false,
         dots: eventIndex ? eventColors(eventIndex, key, 3) : []
@@ -658,13 +1108,14 @@ function monthGrid(jy, jm, weekStart, todayKey, eventIndex, options) {
       cursor.setDate(cursor.getDate() + 1)
     }
 
-    // Number every row by the Jalali week owning its Saturday. For a
-    // Saturday-start grid that is the row's own first cell, which is the
-    // definition; for any other start the row straddles two weeks and the
-    // Saturday is the only anchor that stays stable as the grid is stepped.
-    var anchor = saturday || days[0]
+    // Number every row by the week owning its anchor day -- the Saturday of a
+    // Jalali week, the Thursday of an ISO one. For a grid started on that
+    // calendar's own first day the anchor is the definition itself; for any
+    // other start the row straddles two weeks, and the anchor is the only
+    // thing that stays stable as the grid is stepped.
+    var owner = anchor || opener
     weeks.push({
-      week: jalaliWeek(anchor.jy, anchor.jm, anchor.jd),
+      week: weekOfYear(calendar, owner.year, owner.month, owner.day),
       days: days
     })
   }
@@ -672,10 +1123,12 @@ function monthGrid(jy, jm, weekStart, todayKey, eventIndex, options) {
   return weeks
 }
 
-// Jalali month arithmetic, so stepping from Esfand lands on Farvardin of the
-// next year rather than on a Gregorian month that happens to overlap it.
-function stepMonth(jy, jm, delta) {
-  var index = (Math.round(Number(jy)) * 12) + (Math.round(Number(jm)) - 1) + Math.round(Number(delta))
+// Month arithmetic in the calendar on screen, so stepping from Esfand lands
+// on Farvardin of the next year rather than on a Gregorian month that happens
+// to overlap it. No calendar argument: both have twelve months, so the same
+// modular walk is right for either.
+function stepMonth(year, month, delta) {
+  var index = (Math.round(Number(year)) * 12) + (Math.round(Number(month)) - 1) + Math.round(Number(delta))
   return {
     year: Math.floor(index / 12),
     month: ((index % 12) + 12) % 12 + 1
@@ -889,27 +1342,37 @@ function nextEventToday(events, nowMs, todayKey) {
 // Returns null past a day out, which is the caller's signal to show nothing
 // rather than a countdown nobody is acting on.
 //
-// Persian puts the "from now" at the end rather than the front, so these are
-// built as "۱۰ دقیقه دیگر" and not as a translated "in 10min".
-function formatCountdown(deltaMs, persianDigits) {
+// Not a translated string but two phrasings, because Persian puts the "from
+// now" at the end rather than the front: "۱۰ دقیقه دیگر", never a word-for-
+// word "in 10min".
+function formatCountdown(deltaMs, options) {
   if (deltaMs === null || isNaN(deltaMs) || deltaMs < 0 || deltaMs >= DAY_MS) return null
 
-  var digits = persianDigits !== false
-  if (deltaMs < MINUTE_MS) return "هم‌اکنون"
+  var opts = options || {}
+  var calendar = normalizeCalendar(opts.calendar)
+  var persian = resolveBoolean(opts.persianDigits, usesPersianDigitsByDefault(calendar))
+  var jalali = isJalali(calendar)
+
+  if (deltaMs < MINUTE_MS) return text(calendar, "countdownNow")
 
   var minutes = Math.floor(deltaMs / MINUTE_MS)
-  var text
+  var phrase
+
   if (minutes < 60) {
-    text = minutes + " دقیقه دیگر"
+    phrase = jalali ? minutes + " دقیقه دیگر" : "in " + minutes + "min"
   } else {
     var hours = Math.floor(minutes / 60)
     var rest = minutes % 60
-    text = rest === 0
-      ? hours + " ساعت دیگر"
-      : hours + " ساعت و " + rest + " دقیقه دیگر"
+    if (jalali) {
+      phrase = rest === 0
+        ? hours + " ساعت دیگر"
+        : hours + " ساعت و " + rest + " دقیقه دیگر"
+    } else {
+      phrase = rest === 0 ? "in " + hours + "h" : "in " + hours + "h " + rest + "min"
+    }
   }
 
-  return digits ? toPersianDigits(text) : text
+  return persian ? toPersianDigits(phrase) : phrase
 }
 
 var MAX_ANNOUNCE_TITLE = 28
@@ -985,18 +1448,51 @@ if (typeof module !== "undefined") {
     jalaliDaysInYear: jalaliDaysInYear,
     jalaliDayOfYear: jalaliDayOfYear,
     jalaliWeek: jalaliWeek,
-    monthName: monthName,
-    weekdayName: weekdayName,
-    weekdayShortName: weekdayShortName,
-    toPersianDigits: toPersianDigits,
-    toLatinDigits: toLatinDigits,
-    format: format,
     JALALI_MONTHS: JALALI_MONTHS,
     WEEKDAYS: WEEKDAYS,
     WEEKDAYS_SHORT: WEEKDAYS_SHORT,
+
+    // Gregorian arithmetic
+    isGregorianLeapYear: isGregorianLeapYear,
+    gregorianMonthLength: gregorianMonthLength,
+    gregorianDaysInYear: gregorianDaysInYear,
+    gregorianDayOfYear: gregorianDayOfYear,
+    gregorianFromDate: gregorianFromDate,
+    dateFromGregorian: dateFromGregorian,
+    isoWeek: isoWeek,
+    GREGORIAN_MONTHS: GREGORIAN_MONTHS,
+    GREGORIAN_WEEKDAYS: GREGORIAN_WEEKDAYS,
+
+    // Choosing between them
+    JALALI: JALALI,
+    GREGORIAN: GREGORIAN,
+    normalizeCalendar: normalizeCalendar,
+    isJalali: isJalali,
+    otherCalendar: otherCalendar,
+    fromDate: fromDate,
+    toDate: toDate,
+    monthLength: monthLength,
+    daysInYear: daysInYear,
+    dayOfYear: dayOfYear,
+    weekOfYear: weekOfYear,
+    defaultWeekStart: defaultWeekStart,
+    usesPersianDigitsByDefault: usesPersianDigitsByDefault,
+    isRightToLeftByDefault: isRightToLeftByDefault,
+    resolveBoolean: resolveBoolean,
+    calendarNames: calendarNames,
+    monthName: monthName,
+    weekdayName: weekdayName,
+    weekdayShortName: weekdayShortName,
+    text: text,
+    stringKeys: stringKeys,
+    format: format,
+    toPersianDigits: toPersianDigits,
+    toLatinDigits: toLatinDigits,
     SATURDAY: SATURDAY,
     FRIDAY: FRIDAY,
     THURSDAY: THURSDAY,
+    birthYearInCalendar: birthYearInCalendar,
+    birthYearToStorage: birthYearToStorage,
 
     // Widget model
     dateKey: dateKey,

@@ -19,10 +19,20 @@ Column {
   property string fontFamily: ""
   property bool persianDigits: true
 
+  // Which calendar is on, which also picks the language of every label on
+  // this page. A Persian "Settings" on a widget standing in for Omarchy's
+  // English clock would be the wrong answer, so the two move together.
+  property string calendar: Model.JALALI
+  readonly property bool jalali: Model.isJalali(calendar)
+
+  function t(key) {
+    return Model.text(root.calendar, key)
+  }
+
   property var calendars: []
   property var hiddenCalendars: []
   property bool showYearProgress: false
-  property bool weekStartsSaturday: true
+  property bool weekStartsOnDefault: true
   property bool thursdayWeekend: false
   property bool rightToLeft: true
   property bool showWorkingLocation: false
@@ -37,6 +47,7 @@ Column {
   property bool setupCommandCopied: false
 
   signal calendarToggled(string calendarId)
+  signal calendarSystemPicked(string system)
   signal yearProgressToggled()
   signal weekStartToggled()
   signal thursdayWeekendToggled()
@@ -143,12 +154,12 @@ Column {
 
   // ---- Calendars
 
-  SectionTitle { text: qsTr("تقویم‌ها") }
+  SectionTitle { text: root.t("calendarsTitle") }
 
   Text {
     width: parent.width
     visible: root.calendars.length === 0
-    text: qsTr("هنوز چیزی همگام‌سازی نشده، پس چیزی برای انتخاب نیست.")
+    text: root.t("nothingSynced")
     color: root.faint
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
@@ -168,44 +179,98 @@ Column {
     }
   }
 
+  // ---- Calendar system. First on the page because it is the one control
+  //      that changes the meaning of every control under it.
+
+  SectionTitle { text: root.t("calendarSystemTitle") }
+
+  Text {
+    width: parent.width
+    text: root.t("calendarSystemHint")
+    color: root.faint
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+    wrapMode: Text.WordWrap
+  }
+
+  Row {
+    spacing: Style.space(3)
+
+    Repeater {
+      model: [
+        { id: Model.JALALI, label: root.t("jalaliOption") },
+        { id: Model.GREGORIAN, label: root.t("gregorianOption") }
+      ]
+
+      Rectangle {
+        required property var modelData
+
+        readonly property bool active: modelData.id === root.calendar
+
+        width: systemLabel.width + Style.space(12)
+        height: systemLabel.height + Style.space(5)
+        radius: height / 2
+        color: active
+          ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+          : "transparent"
+        border.width: Style.spacing.hairline
+        border.color: active ? root.muted : Qt.darker(root.foreground, 2.4)
+
+        Text {
+          id: systemLabel
+          anchors.centerIn: parent
+          text: modelData.label
+          color: active ? root.foreground : root.faint
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        TapHandler { onTapped: root.calendarSystemPicked(modelData.id) }
+      }
+    }
+  }
+
   // ---- Display
 
-  SectionTitle { text: qsTr("نمایش") }
+  SectionTitle { text: root.t("displayTitle") }
 
   ToggleRow {
-    label: qsTr("شروع هفته از شنبه")
-    hint: qsTr("خاموش یعنی هفته از دوشنبه شروع می‌شود")
-    checked: root.weekStartsSaturday
+    label: root.t("weekStartsLabel")
+    hint: root.t("weekStartsHint")
+    checked: root.weekStartsOnDefault
     onActivated: root.weekStartToggled()
   }
 
   ToggleRow {
     // Friday is the weekend everywhere in Iran and is not negotiable, so it
     // is not offered here. Thursday genuinely differs between a bank and a
-    // private office, which is the only reason this row exists.
-    label: qsTr("پنجشنبه هم تعطیل است")
-    hint: qsTr("جمعه همیشه تعطیل در نظر گرفته می‌شود")
+    // private office, which is the only reason this row exists -- and under
+    // Gregorian, where the weekend is Saturday and Sunday, it means nothing
+    // at all, so it is not shown.
+    visible: root.jalali
+    label: root.t("thursdayWeekend")
+    hint: root.t("thursdayWeekendHint")
     checked: root.thursdayWeekend
     onActivated: root.thursdayWeekendToggled()
   }
 
   ToggleRow {
-    label: qsTr("ارقام فارسی")
-    hint: qsTr("خاموش یعنی ارقام لاتین: ۱۴۰۵ در برابر 1405")
+    label: root.t("persianDigitsLabel")
+    hint: root.t("persianDigitsHint")
     checked: root.persianDigits
     onActivated: root.persianDigitsToggled()
   }
 
   ToggleRow {
-    label: qsTr("چیدمان راست‌به‌چپ")
-    hint: qsTr("خاموش یعنی همان چیدمان چپ‌به‌راست تقویم اصلی")
+    label: root.t("rtlLabel")
+    hint: root.t("rtlHint")
     checked: root.rightToLeft
     onActivated: root.rightToLeftToggled()
   }
 
   ToggleRow {
-    label: qsTr("رویدادهای محل کار")
-    hint: qsTr("نشانه‌های دورکاری گوگل، به‌صورت پیش‌فرض پنهان")
+    label: root.t("workingLocation")
+    hint: root.t("workingLocationHint")
     checked: root.showWorkingLocation
     onActivated: root.workingLocationToggled()
   }
@@ -213,26 +278,26 @@ Column {
   ToggleRow {
     // Every row on this page reads "checked means shown". Phrasing this one as
     // "Hide ..." inverted that and made the page contradict itself.
-    label: qsTr("دعوت‌های رد شده")
-    hint: qsTr("وقتی روشن است، خط‌خورده نمایش داده می‌شوند")
+    label: root.t("declinedInvitations")
+    hint: root.t("declinedInvitationsHint")
     checked: !root.hideDeclined
     onActivated: root.hideDeclinedToggled()
   }
 
   ToggleRow {
-    label: qsTr("نوار سال و زندگی")
-    hint: qsTr("نوارهای ساعت اصلی اُمارچی، پیش‌فرض خاموش")
+    label: root.t("yearLifeProgress")
+    hint: root.t("yearLifeProgressHint")
     checked: root.showYearProgress
     onActivated: root.yearProgressToggled()
   }
 
   // ---- Bar
 
-  SectionTitle { text: qsTr("برچسب نوار") }
+  SectionTitle { text: root.t("barLabelTitle") }
 
   Text {
     width: parent.width
-    text: qsTr("چند دقیقه مانده به رویداد، نوار ساعت را کنار بگذارد و آن را اعلام کند.")
+    text: root.t("barLabelHint")
     color: root.faint
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
@@ -262,7 +327,7 @@ Column {
         Text {
           id: leadLabel
           anchors.centerIn: parent
-          text: modelData === 0 ? qsTr("هرگز") : root.num(modelData) + qsTr(" دقیقه")
+          text: modelData === 0 ? root.t("never") : root.num(modelData) + root.t("minutesSuffix")
           color: active ? root.foreground : root.faint
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -277,7 +342,7 @@ Column {
   //      OAuth browser flow, which belongs to sync/setup and not to a popup
   //      in a status bar. What belongs here is knowing whether it is working.
 
-  SectionTitle { text: qsTr("همگام‌سازی") }
+  SectionTitle { text: root.t("syncTitle") }
 
   // Two items rather than two lines of one, for the same reason the panel's
   // empty state is split: a Text holding a Persian sentence is a
@@ -293,16 +358,16 @@ Column {
     readonly property string message: {
       if (root.syncState === "missing") {
         return root.setupCommandCopied
-          ? qsTr("کپی شد. در ترمینال اجرا کنید:")
-          : qsTr("هنوز تقویمی وصل نشده. برای کپی کلیک کنید، سپس اجرا کنید:")
+          ? root.t("copiedRun")
+          : root.t("noSyncConnect")
       }
       if (root.syncState === "version")
-        return qsTr("فایل رویدادها را نسخهٔ جدیدتری از این افزونه نوشته است.")
+        return root.t("versionNewerShort")
 
-      var line = qsTr("%1 رویداد از %2").arg(root.num(root.eventCount)).arg(root.sourceLabel)
+      var line = root.t("syncCount").arg(root.num(root.eventCount)).arg(root.sourceLabel)
       return root.syncState === "stale"
-        ? line + qsTr("\nآخرین همگام‌سازی قدیمی به نظر می‌رسد. بررسی کنید:")
-        : line + qsTr("\nآخرین همگام‌سازی %1").arg(root.syncedAt)
+        ? line + ("\n" + root.t("staleCheckShort"))
+        : line + ("\n" + root.t("syncLast")).arg(root.syncedAt)
     }
 
     readonly property string command: {

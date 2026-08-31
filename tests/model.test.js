@@ -45,7 +45,7 @@ test('eventColors respects the limit', () => {
 const MORDAD = [1405, 5]
 
 test('monthGrid is always six rows of seven days', () => {
-  const weeks = Model.monthGrid(MORDAD[0], MORDAD[1], Model.SATURDAY, '2026-08-10')
+  const weeks = Model.monthGrid(Model.JALALI, MORDAD[0], MORDAD[1], Model.SATURDAY, '2026-08-10')
   assert.equal(weeks.length, 6)
   const cells = weeks.flatMap(week => week.days)
   assert.equal(cells.length, 42)
@@ -55,7 +55,7 @@ test('monthGrid is always six rows of seven days', () => {
 
 test('monthGrid marks days that have events', () => {
   const index = Model.indexEventsByDate(EVENTS)
-  const cells = Model.monthGrid(MORDAD[0], MORDAD[1], Model.SATURDAY, '2026-08-10', index)
+  const cells = Model.monthGrid(Model.JALALI, MORDAD[0], MORDAD[1], Model.SATURDAY, '2026-08-10', index)
     .flatMap(week => week.days)
   const tenth = cells.find(cell => cell.key === '2026-08-10')
   const eleventh = cells.find(cell => cell.key === '2026-08-11')
@@ -68,15 +68,15 @@ test('monthGrid marks days that have events', () => {
 // what events are filed under, and losing it would decouple the grid from the
 // only data it renders.
 test('monthGrid cells carry both calendars', () => {
-  const cells = Model.monthGrid(MORDAD[0], MORDAD[1], Model.SATURDAY, '2026-08-10')
+  const cells = Model.monthGrid(Model.JALALI, MORDAD[0], MORDAD[1], Model.SATURDAY, '2026-08-10')
     .flatMap(week => week.days)
   const tenth = cells.find(cell => cell.key === '2026-08-10')
   assert.equal(tenth.day, 10)
   assert.equal(tenth.month, 7)
   assert.equal(tenth.year, 2026)
-  assert.equal(tenth.jy, 1405)
-  assert.equal(tenth.jm, 5)
-  assert.equal(tenth.jd, 19)
+  assert.equal(tenth.civilYear, 1405)
+  assert.equal(tenth.civilMonth, 5)
+  assert.equal(tenth.civilDay, 19)
   assert.equal(tenth.inMonth, true)
   assert.equal(tenth.today, true)
 })
@@ -84,46 +84,46 @@ test('monthGrid cells carry both calendars', () => {
 test('monthGrid pads the first row with the tail of the previous month', () => {
   // Mordad 1405 opens on a Thursday, which under a Saturday-start week is
   // the sixth column, so five days of Tir lead the grid in.
-  const first = Model.monthGrid(1405, 5, Model.SATURDAY, '')[0].days
+  const first = Model.monthGrid(Model.JALALI, 1405, 5, Model.SATURDAY, '')[0].days
   const leading = first.filter(cell => !cell.inMonth)
   assert.equal(leading.length, 5)
-  assert.ok(leading.every(cell => cell.jm === 4 && cell.jy === 1405))
+  assert.ok(leading.every(cell => cell.civilMonth === 4 && cell.civilYear === 1405))
   assert.equal(first[0].weekday, Model.SATURDAY)
-  assert.equal(first[5].jd, 1)
-  assert.equal(first[5].jm, 5)
+  assert.equal(first[5].civilDay, 1)
+  assert.equal(first[5].civilMonth, 5)
 })
 
 test('monthGrid opens every row on the configured week start', () => {
   for (const start of [Model.SATURDAY, 0, 1]) {
-    for (const week of Model.monthGrid(1405, 5, start, '')) {
+    for (const week of Model.monthGrid(Model.JALALI, 1405, 5, start, '')) {
       assert.equal(week.days[0].weekday, start)
     }
   }
 })
 
 test('monthGrid covers every day of a 31-day month', () => {
-  const days = Model.monthGrid(1405, 1, Model.SATURDAY, '')
+  const days = Model.monthGrid(Model.JALALI, 1405, 1, Model.SATURDAY, '')
     .flatMap(week => week.days)
     .filter(cell => cell.inMonth)
-    .map(cell => cell.jd)
+    .map(cell => cell.civilDay)
   assert.deepEqual(days, Array.from({ length: 31 }, (_, i) => i + 1))
 })
 
 test('monthGrid covers a 30-day Esfand in a leap year and a 29-day one otherwise', () => {
-  const leap = Model.monthGrid(1403, 12, Model.SATURDAY, '').flatMap(w => w.days).filter(c => c.inMonth)
-  const plain = Model.monthGrid(1404, 12, Model.SATURDAY, '').flatMap(w => w.days).filter(c => c.inMonth)
+  const leap = Model.monthGrid(Model.JALALI, 1403, 12, Model.SATURDAY, '').flatMap(w => w.days).filter(c => c.inMonth)
+  const plain = Model.monthGrid(Model.JALALI, 1404, 12, Model.SATURDAY, '').flatMap(w => w.days).filter(c => c.inMonth)
   assert.equal(leap.length, 30)
   assert.equal(plain.length, 29)
 })
 
 test('monthGrid marks Friday as the weekend, and Thursday only when asked', () => {
-  const cells = Model.monthGrid(1405, 5, Model.SATURDAY, '').flatMap(w => w.days)
+  const cells = Model.monthGrid(Model.JALALI, 1405, 5, Model.SATURDAY, '').flatMap(w => w.days)
   const friday = cells.find(cell => cell.weekday === Model.FRIDAY)
   const thursday = cells.find(cell => cell.weekday === Model.THURSDAY)
   assert.equal(friday.weekend, true)
   assert.equal(thursday.weekend, false)
 
-  const withThursday = Model.monthGrid(1405, 5, Model.SATURDAY, '', null, { thursdayWeekend: true })
+  const withThursday = Model.monthGrid(Model.JALALI, 1405, 5, Model.SATURDAY, '', null, { thursdayWeekend: true })
     .flatMap(w => w.days)
   assert.equal(withThursday.find(cell => cell.weekday === Model.THURSDAY).weekend, true)
   assert.equal(withThursday.find(cell => cell.weekday === Model.SATURDAY).weekend, false)
@@ -136,25 +136,37 @@ test('stepMonth rolls over Esfand into Farvardin of the next year', () => {
   assert.deepEqual(Model.stepMonth(1405, 6, -12), { year: 1404, month: 6 })
 })
 
-test('week start defaults to Saturday and toggles against Monday', () => {
-  assert.equal(Model.normalizedWeekStart(null, null), Model.SATURDAY)
-  assert.equal(Model.normalizedWeekStart('', null), Model.SATURDAY)
+test('week start defaults per calendar and toggles against its own pair', () => {
+  assert.equal(Model.normalizedWeekStart(null, Model.defaultWeekStart(Model.JALALI)), Model.SATURDAY)
+  assert.equal(Model.normalizedWeekStart('', Model.defaultWeekStart(Model.GREGORIAN)), 1)
   assert.equal(Model.normalizedWeekStart('saturday', null), 6)
   assert.equal(Model.normalizedWeekStart('mon', null), 1)
-  assert.equal(Model.toggledWeekStart(Model.SATURDAY), 1)
-  assert.equal(Model.toggledWeekStart(1), Model.SATURDAY)
+
+  // Jalali switches between the Iranian week and the ISO one; Gregorian
+  // between the ISO week and the American one.
+  assert.equal(Model.toggledWeekStart(Model.SATURDAY, Model.JALALI), 1)
+  assert.equal(Model.toggledWeekStart(1, Model.JALALI), Model.SATURDAY)
+  assert.equal(Model.toggledWeekStart(1, Model.GREGORIAN), 0)
+  assert.equal(Model.toggledWeekStart(0, Model.GREGORIAN), 1)
   assert.equal(Model.weekStartSettingName(Model.SATURDAY), 'saturday')
 })
 
 test('weekdayOrder starts where it is told and wraps', () => {
-  assert.deepEqual(Model.weekdayOrder(Model.SATURDAY), [6, 0, 1, 2, 3, 4, 5])
-  assert.deepEqual(Model.weekdayOrder(1), [1, 2, 3, 4, 5, 6, 0])
+  assert.deepEqual(Model.weekdayOrder(Model.SATURDAY, Model.JALALI), [6, 0, 1, 2, 3, 4, 5])
+  assert.deepEqual(Model.weekdayOrder(1, Model.GREGORIAN), [1, 2, 3, 4, 5, 6, 0])
+  assert.deepEqual(Model.weekdayOrder(null, Model.JALALI), [6, 0, 1, 2, 3, 4, 5])
+  assert.deepEqual(Model.weekdayOrder(null, Model.GREGORIAN), [1, 2, 3, 4, 5, 6, 0])
 })
 
-test('yearProgress is measured on the Jalali year, so it empties at Nowruz', () => {
-  assert.equal(Model.yearProgressPercent(1405, 1, 1), 0)
-  assert.equal(Model.yearProgressPercent(1405, 12, 29), 100)
-  assert.equal(Model.yearProgressPercent(1405, 7, 1), 51)
+test('yearProgress is measured on the active calendar year', () => {
+  assert.equal(Model.yearProgressPercent(Model.JALALI, 1405, 1, 1), 0)
+  assert.equal(Model.yearProgressPercent(Model.JALALI, 1405, 12, 29), 100)
+  assert.equal(Model.yearProgressPercent(Model.JALALI, 1405, 7, 1), 51)
+
+  // The same instant reads differently, which is the point: a Jalali year
+  // ends at Nowruz and a Gregorian one at New Year.
+  assert.equal(Model.yearProgressPercent(Model.GREGORIAN, 2026, 1, 1), 0)
+  assert.equal(Model.yearProgressPercent(Model.GREGORIAN, 2026, 12, 31), 100)
 })
 
 test('syncState reports missing when there is no document', () => {
@@ -297,9 +309,21 @@ test('formatCountdown renders minutes, hours and now, in Persian', () => {
   assert.equal(Model.formatCountdown(72 * 60 * 1000), '۱ ساعت و ۱۲ دقیقه دیگر')
 })
 
-test('formatCountdown can be asked for Latin digits', () => {
-  assert.equal(Model.formatCountdown(10 * 60 * 1000, false), '10 دقیقه دیگر')
-  assert.equal(Model.formatCountdown(72 * 60 * 1000, false), '1 ساعت و 12 دقیقه دیگر')
+// Not the Persian sentence translated word for word: Persian puts the "from
+// now" at the end, English at the front.
+test('formatCountdown reads as English under Gregorian', () => {
+  const g = { calendar: Model.GREGORIAN }
+  assert.equal(Model.formatCountdown(30 * 1000, g), 'now')
+  assert.equal(Model.formatCountdown(10 * 60 * 1000, g), 'in 10min')
+  assert.equal(Model.formatCountdown(60 * 60 * 1000, g), 'in 1h')
+  assert.equal(Model.formatCountdown(72 * 60 * 1000, g), 'in 1h 12min')
+})
+
+test('formatCountdown digits can be overridden against the calendar', () => {
+  assert.equal(Model.formatCountdown(10 * 60 * 1000, { persianDigits: false }), '10 دقیقه دیگر')
+  assert.equal(
+    Model.formatCountdown(72 * 60 * 1000, { calendar: Model.GREGORIAN, persianDigits: true }),
+    'in ۱h ۱۲min')
 })
 
 test('formatCountdown gives up past a day and on bad input', () => {

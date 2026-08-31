@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "masoud.jalali-calendar",
   "name": "Jalali Calendar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "masoud",
   "license": "MIT",
-  "description": "تقویم شمسی (جلالی) در نوار اُمارچی، با رویدادهای گوگل کلندر — A Jalali (Solar Hijri) calendar in the Omarchy bar, with your real events on it.",
+  "description": "تقویم شمسی (جلالی) و میلادی در نوار اُمارچی، با فونت وزیرمتن همراه — A switchable Jalali / Gregorian calendar for the Omarchy bar, Vazirmatn bundled.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,10 +14,11 @@
   },
   "barWidget": {
     "displayName": "Jalali Calendar",
-    "description": "تقویم شمسی (جلالی) در نوار اُمارچی — a Jalali calendar and clock with your real events on it.",
+    "description": "تقویم شمسی (جلالی) و میلادی در نوار اُمارچی، با فونت وزیرمتن همراه — A switchable Jalali / Gregorian calendar for the Omarchy bar, Vazirmatn bundled.",
     "category": "Time",
     "allowMultiple": false,
     "defaults": {
+      "calendar": "jalali",
       "format": "dddd HH:mm",
       "formatAlt": "dddd d MMMM yyyy",
       "verticalFormat": "HH\n—\nmm",
@@ -25,39 +26,55 @@
     },
     "schema": [
       {
+        "key": "calendar",
+        "type": "enum",
+        "label": "تقویم / Calendar",
+        "defaultValue": "jalali",
+        "options": [
+          {
+            "value": "jalali",
+            "label": "شمسی / Jalali"
+          },
+          {
+            "value": "gregorian",
+            "label": "میلادی / Gregorian"
+          }
+        ]
+      },
+      {
         "key": "format",
         "type": "string",
-        "label": "قالب تاریخ",
+        "label": "قالب تاریخ / Date format",
         "defaultValue": "dddd HH:mm"
       },
       {
         "key": "formatAlt",
         "type": "string",
-        "label": "قالب جایگزین",
+        "label": "قالب جایگزین / Alternate format",
         "defaultValue": "dddd d MMMM yyyy"
       },
       {
         "key": "verticalFormat",
         "type": "string",
-        "label": "قالب نوار عمودی",
+        "label": "قالب نوار عمودی / Vertical bar format",
         "defaultValue": "HH\n—\nmm"
       },
       {
         "key": "fontFamily",
         "type": "string",
-        "label": "فونت",
+        "label": "فونت / Font",
         "defaultValue": "Vazirmatn"
       },
       {
         "key": "birthYear",
         "type": "number",
-        "label": "سال تولد (شمسی)",
+        "label": "سال تولد (میلادی) / Birth year (Gregorian)",
         "defaultValue": 0
       },
       {
         "key": "lifeExpectancy",
         "type": "number",
-        "label": "امید به زندگی",
+        "label": "امید به زندگی / Life expectancy",
         "defaultValue": 0
       }
     ]
