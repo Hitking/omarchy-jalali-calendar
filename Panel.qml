@@ -1301,14 +1301,18 @@ Panel {
                 onTapped: root.copySetupCommand()
               }
 
+              // Every Latin run below goes through Model.ltrIsolate. A shell
+              // command reordered by the surrounding Persian is a command
+              // that cannot be pasted, which is the whole point of printing
+              // it here.
               text: root.syncState === "missing"
                 ? (root.setupCommandCopied
-                  ? qsTr("کپی شد. در ترمینال اجرا کنید:\n%1").arg(root.setupCommand)
-                  : qsTr("هنوز تقویمی همگام‌سازی نشده. برای کپی کلیک کنید، سپس اجرا کنید:\n%1").arg(root.setupCommand))
+                  ? qsTr("کپی شد. در ترمینال اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand))
+                  : qsTr("هنوز تقویمی همگام‌سازی نشده. برای کپی کلیک کنید، سپس اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand)))
                 : root.syncState === "version"
                   ? qsTr("فایل رویدادها را نسخهٔ جدیدتری نوشته است. افزونه را به‌روز کنید.")
                   : root.syncState === "stale"
-                    ? qsTr("ممکن است تقویم به‌روز نباشد. بررسی کنید: journalctl --user -u omarchy-calendar-sync")
+                    ? qsTr("ممکن است تقویم به‌روز نباشد. بررسی کنید:\n%1").arg(Model.ltrIsolate("journalctl --user -u omarchy-calendar-sync"))
                     : qsTr("رویدادی ثبت نشده")
             }
           }

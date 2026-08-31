@@ -297,17 +297,20 @@ Column {
       onTapped: root.setupCommandCopyRequested()
     }
 
+    // Commands, paths and the sync's own name are Latin runs inside a Persian
+    // paragraph, so each one is isolated. Unisolated, bidi reorders them and
+    // prints a command that cannot be pasted.
     text: {
       if (root.syncState === "missing") {
         return root.setupCommandCopied
-          ? qsTr("کپی شد. در ترمینال اجرا کنید:\n%1").arg(root.setupCommand)
-          : qsTr("هنوز تقویمی وصل نشده. برای کپی کلیک کنید، سپس اجرا کنید:\n%1").arg(root.setupCommand)
+          ? qsTr("کپی شد. در ترمینال اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand))
+          : qsTr("هنوز تقویمی وصل نشده. برای کپی کلیک کنید، سپس اجرا کنید:\n%1").arg(Model.ltrIsolate(root.setupCommand))
       }
       if (root.syncState === "version") return qsTr("فایل رویدادها را نسخهٔ جدیدتری از این افزونه نوشته است.")
 
-      var line = qsTr("%1 رویداد از %2").arg(root.num(root.eventCount)).arg(root.sourceLabel)
+      var line = qsTr("%1 رویداد از %2").arg(root.num(root.eventCount)).arg(Model.ltrIsolate(root.sourceLabel))
       if (root.syncState === "stale") {
-        return line + qsTr("\nآخرین همگام‌سازی قدیمی به نظر می‌رسد. بررسی کنید: journalctl --user -u omarchy-calendar-sync")
+        return line + qsTr("\nآخرین همگام‌سازی قدیمی به نظر می‌رسد. بررسی کنید:\n%1").arg(Model.ltrIsolate("journalctl --user -u omarchy-calendar-sync"))
       }
       return line + qsTr("\nآخرین همگام‌سازی %1").arg(root.syncedAt)
     }
