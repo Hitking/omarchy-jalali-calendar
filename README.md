@@ -77,14 +77,15 @@ omarchy shell jalali-calendar setCalendar gregorian
 ## نصب
 
 ```bash
-omarchy plugin add https://gitea.qalam.group/masoud/omarchy-jalali-calendar.git --enable
+omarchy plugin add https://github.com/Hitking/omarchy-jalali-calendar.git --enable
 ```
 
-یا از روی یک کلون محلی:
+یا از روی یک کلون محلی — با کلون واقعی، نه سیم‌لینک؛ اعتبارسنج اُمارچی هر
+سیم‌لینکی را در پوشهٔ افزونه رد می‌کند:
 
 ```bash
-ln -s "$PWD" ~/.config/omarchy/plugins/masoud.jalali-calendar
-omarchy plugin enable masoud.jalali-calendar
+git clone "$PWD" ~/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar
+omarchy plugin enable masoudyousefnejad.jalali-calendar
 ```
 
 این افزونه **جای ساعت داخلی را می‌گیرد**. در `~/.config/omarchy/shell.json`
@@ -94,10 +95,10 @@ omarchy plugin enable masoud.jalali-calendar
 ```json
 {
   "bar": {
-    "centerAnchor": "masoud.jalali-calendar",
+    "centerAnchor": "masoudyousefnejad.jalali-calendar",
     "layout": {
       "center": [
-        { "id": "masoud.jalali-calendar", "format": "dddd HH:mm" }
+        { "id": "masoudyousefnejad.jalali-calendar", "format": "dddd HH:mm" }
       ]
     }
   }
@@ -113,6 +114,35 @@ omarchy restart shell
 **نصب، تمام کار نیست.** تا اینجا یک ساعت کار می‌کند و یک تقویم خالی، چون هنوز
 چیزی به آن خوراک نمی‌دهد. پایین‌تر گوگل کلندر را وصل کنید، یا هر منبع دیگری را
 به فایل رویدادها وصل کنید. خود پنل هم وقتی بازش کنید همین را با دستورش می‌گوید.
+
+## حذف
+
+```bash
+omarchy plugin remove masoudyousefnejad.jalali-calendar
+```
+
+بعد در `~/.config/omarchy/shell.json` مدخل این افزونه را از `bar.layout.center`
+بردارید و ساعت داخلی را برگردانید: `omarchy.clock` را دوباره به `center` اضافه
+کنید و `bar.centerAnchor` را هم روی همان بگذارید. سپس:
+
+```bash
+omarchy restart shell
+```
+
+اگر همگام‌سازی را راه انداخته بودید، تایمرش بیرون از پوشهٔ افزونه نصب شده و با
+حذف افزونه نمی‌رود. خودتان برش دارید:
+
+```bash
+systemctl --user disable --now omarchy-calendar-sync.timer
+rm -f ~/.config/systemd/user/omarchy-calendar-sync.service \
+      ~/.config/systemd/user/omarchy-calendar-sync.timer
+systemctl --user daemon-reload
+```
+
+و اگر هیچ چیز دیگری از این داده‌ها استفاده نمی‌کند، این دو فایل هم می‌مانند:
+`~/.config/omarchy/calendar-sync.json` (تنظیمات و گذرواژهٔ CalDAV) و
+`~/.local/state/omarchy/calendar-events.json` (رویدادهای همگام‌شده). فایل دوم را
+تقویم اصلی اُمارچی هم می‌خوانَد، پس اگر آن را نگه داشته‌اید پاکش نکنید.
 
 ## قالب‌های تاریخ
 
@@ -170,7 +200,7 @@ omarchy restart shell
 صفحهٔ تنظیمات فقط کلید و دکمه دارد:
 
 ```json
-{ "id": "masoud.jalali-calendar", "fontFamily": "Vazirmatn" }
+{ "id": "masoudyousefnejad.jalali-calendar", "fontFamily": "Vazirmatn" }
 ```
 
 `Vazirmatn` همان نسخه‌ای است که با افزونه می‌آید (`fonts/`، تحت OFL 1.1) و با
@@ -192,7 +222,7 @@ omarchy shell jalali-calendar settings   # یا مستقیم همین
 اگر ترجیح می‌دهید در ترمینال بمانید، همین کار را این اسکریپت می‌کند:
 
 ```bash
-~/.config/omarchy/plugins/masoud.jalali-calendar/sync/setup-caldav
+~/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar/sync/setup-caldav
 ```
 
 هر دو مسیر یک پیاده‌سازی دارند
@@ -231,7 +261,7 @@ password manager دارید، آن فایل را پاک کنید و `OMARCHY_CAL
 ## همگام‌سازی گوگل کلندر
 
 ```bash
-~/.config/omarchy/plugins/masoud.jalali-calendar/sync/setup-google
+~/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar/sync/setup-google
 ```
 
 گوگل تنها منبعی است که از پنل وصل نمی‌شود: ورود در مرورگر می‌خواهد و چهار
@@ -359,12 +389,29 @@ test holding one grid against the other to prove it: a calendar is a way of
 naming a day, never the day itself.
 
 ```bash
-omarchy plugin add https://gitea.qalam.group/masoud/omarchy-jalali-calendar.git --enable
+omarchy plugin add https://github.com/Hitking/omarchy-jalali-calendar.git --enable
 ```
 
-Then point `bar.centerAnchor` at `masoud.jalali-calendar` in
+Then point `bar.centerAnchor` at `masoudyousefnejad.jalali-calendar` in
 `~/.config/omarchy/shell.json`, remove `omarchy.clock` from
 `bar.layout.center`, and `omarchy restart shell`.
+
+To remove it, run `omarchy plugin remove masoudyousefnejad.jalali-calendar`,
+put `omarchy.clock` back into `bar.layout.center` and `bar.centerAnchor`, and
+`omarchy restart shell`. The sync timer is installed outside the plugin folder
+and stays behind:
+
+```bash
+systemctl --user disable --now omarchy-calendar-sync.timer
+rm -f ~/.config/systemd/user/omarchy-calendar-sync.service \
+      ~/.config/systemd/user/omarchy-calendar-sync.timer
+systemctl --user daemon-reload
+```
+
+So do `~/.config/omarchy/calendar-sync.json` (settings and the CalDAV
+password) and `~/.local/state/omarchy/calendar-events.json` (synced events).
+Omarchy's upstream calendar reads that second file too, so leave it alone if
+you still use that plugin.
 
 Format tokens are Qt's, resolved against whichever calendar is active:
 `yyyy MMMM dddd d HH mm ww`, with `'…'` for literals.

@@ -30,14 +30,10 @@ git config --global credential.helper store
 
 ## ۲. نصب افزونه روی آن ماشین
 
-اول فونت، وگرنه fontconfig یک جایگزین انتخاب می‌کند که آن چیزی نیست که
-می‌خواهید:
+فونت لازم نیست؛ وزیرمتن همراه خود افزونه می‌آید و با `FontLoader` ثبت می‌شود.
+(اگر جای دیگری هم می‌خواهیدش، نام پکیج در AUR `vazirmatn-fonts` است.)
 
-```bash
-yay -S ttf-vazirmatn
-```
-
-بعد افزونه. **از روی URL نصب کنید، نه از روی مسیر محلی:** اُمارچی افزونه را
+افزونه را **از روی URL نصب کنید، نه از روی مسیر محلی:** اُمارچی افزونه را
 `git clone` می‌کند و همان `origin` را برای `omarchy plugin update` نگه می‌دارد.
 اگر از مسیر محلی نصب کنید، `origin` همان پوشهٔ محلی می‌ماند و به‌روزرسانی از
 Gitea دیگر کار نمی‌کند.
@@ -52,11 +48,11 @@ omarchy plugin add https://gitea.qalam.group/masoud/omarchy-jalali-calendar.git
 cp ~/.config/omarchy/shell.json ~/.config/omarchy/shell.json.bak
 
 jq '
-  .bar.centerAnchor = "masoud.jalali-calendar"
+  .bar.centerAnchor = "masoudyousefnejad.jalali-calendar"
   | .bar.layout.center = (.bar.layout.center | map(
       if .id == "omarchy.clock" then
         {
-          id: "masoud.jalali-calendar",
+          id: "masoudyousefnejad.jalali-calendar",
           format: "dddd HH:mm",
           formatAlt: "dddd d MMMM yyyy",
           verticalFormat: "HH\n—\nmm",
@@ -65,7 +61,7 @@ jq '
       else . end))
 ' ~/.config/omarchy/shell.json > /tmp/shell.json && mv /tmp/shell.json ~/.config/omarchy/shell.json
 
-omarchy plugin enable masoud.jalali-calendar
+omarchy plugin enable masoudyousefnejad.jalali-calendar
 omarchy restart shell
 ```
 
@@ -73,7 +69,7 @@ omarchy restart shell
 
 ```bash
 cp ~/.config/omarchy/shell.json.bak ~/.config/omarchy/shell.json
-omarchy plugin remove masoud.jalali-calendar
+omarchy plugin remove masoudyousefnejad.jalali-calendar
 omarchy restart shell
 ```
 
@@ -103,8 +99,10 @@ curl -X POST https://gitea.qalam.group/api/v1/user/repos \
 
 ## ۴. فرستادن به گیت‌هاب
 
-اگر خواستید همین ریپو روی گیت‌هاب هم باشد، به‌عنوان ریموت دوم اضافه‌اش کنید.
-`origin` را عوض نکنید، وگرنه `omarchy plugin update` مبدأش را گم می‌کند.
+گیت‌هاب ریموت دوم است، نه `origin`. `origin` را عوض نکنید وگرنه
+`omarchy plugin update` روی نصب‌های موجود مبدأش را گم می‌کند. ولی **مارکت‌پلیس
+فقط گیت‌هاب را می‌خوانَد**، پس هر چیزی که قرار است منتشر شود باید آنجا هم باشد:
+`https://github.com/Hitking/omarchy-jalali-calendar`.
 
 ```bash
 gh auth login                       # مرورگر باز می‌شود؛ HTTPS را انتخاب کنید
@@ -115,7 +113,7 @@ git push -u github main
 بدون `gh` هم می‌شود: ریپوی خالی را در گیت‌هاب بسازید، بعد
 
 ```bash
-git remote add github git@github.com:<username>/omarchy-jalali-calendar.git
+git remote add github git@github.com:Hitking/omarchy-jalali-calendar.git
 git push -u github main
 ```
 
@@ -133,7 +131,7 @@ ssh -T git@github.com                              # باید نامتان را 
 
 ```bash
 git remote set-url --add --push origin https://gitea.qalam.group/masoud/omarchy-jalali-calendar.git
-git remote set-url --add --push origin git@github.com:<username>/omarchy-jalali-calendar.git
+git remote set-url --add --push origin git@github.com:Hitking/omarchy-jalali-calendar.git
 ```
 
 از این به بعد `git push` هر دو مقصد را می‌زند، ولی `git pull` همچنان فقط از
@@ -151,18 +149,18 @@ cd sync && PYTHONPATH=. python3 -m unittest discover -s ../tests -t ..
 دقیقاً برای همین که بشود تستش کرد. سمت پایتون هم فقط کتابخانهٔ استاندارد است.
 
 هنگام کار روی کد، افزونهٔ نصب‌شده در
-`~/.config/omarchy/plugins/masoud.jalali-calendar/` یک کلون گیت است، جدا از
+`~/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar/` یک کلون گیت است، جدا از
 پوشهٔ کاری شما. شل تغییرات همان پوشه را زیر نظر دارد و خودکار ری‌لود می‌کند، پس
 برای دیدن تغییر باید به آن پوشه برسانیدش:
 
 ```bash
-git -C ~/.config/omarchy/plugins/masoud.jalali-calendar pull --ff-only ~/Projects/omarchy-jalali-calendar main
+git -C ~/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar pull --ff-only ~/Projects/omarchy-jalali-calendar main
 ```
 
 یا بعد از اینکه پوش کردید:
 
 ```bash
-omarchy plugin update masoud.jalali-calendar
+omarchy plugin update masoudyousefnejad.jalali-calendar
 ```
 
 دو نکته که وقت می‌گیرند اگر ندانید:
@@ -187,3 +185,52 @@ omarchy-plugin-validate .                # اعتبارسنجی manifest
 omarchy shell jalali-calendar open
 omarchy shell jalali-calendar close
 ```
+
+## ۶. انتشار در مارکت‌پلیس
+
+فهرست در `plugins.omarchy.org` از ریپوی `omacom/omarchy-plugin-marketplace`
+ساخته می‌شود و ثبت‌نام با یک ایشوی قالب‌دار انجام می‌شود، نه با pull request.
+راهنمای کامل: [`SUBMISSION.md`](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/SUBMISSION.md).
+
+پیش از ارسال:
+
+```bash
+omarchy plugin validate .        # باید بی‌خروجی و با کد ۰ تمام شود
+node --test tests/*.test.js
+```
+
+شرط‌هایی که خود مارکت‌پلیس می‌گذارد:
+
+- ریپو **عمومی روی گیت‌هاب**، با `manifest.json` در ریشه
+- README با دستور **نصب و حذف** — هر دو، نه فقط نصب
+- فایل لایسنس در ریشه و ذکر وابستگی‌های بیرونی
+- `preview.png` (یا jpg/webp/avif) در ریشه، اختیاری ولی بدون آن کارت خالی است
+- شناسهٔ یکتا بیرون از فضای رزرو‌شدهٔ `omarchy.*`
+
+**شناسه دائمی است.** بعد از ثبت نمی‌شود عوضش کرد و حتی اگر فهرست حذف شود، همان
+شناسه دیگر برای کسی آزاد نمی‌شود. شناسهٔ این افزونه:
+`masoudyousefnejad.jalali-calendar`.
+
+ارسال:
+
+```bash
+gh issue create \
+  --repo omacom/omarchy-plugin-marketplace \
+  --title "[Plugin]: Jalali Calendar" \
+  --body-file /tmp/omarchy-plugin-submission.md
+```
+
+بدنهٔ ایشو باید دقیقاً شش عنوان قالب را به همان ترتیب داشته باشد (Repository
+URL، Category، Tags، Suggest a missing tag، Maintainer notes، Submission
+checklist) وگرنه اعتبارسنجی خودکار اصلاً اجرا نمی‌شود. دستهٔ این افزونه
+`Widgets` است و برچسب‌هایش `bar` و `quickshell` — حداکثر سه برچسب مجاز است.
+
+بعد از باز شدن ایشو دو ربات نظر می‌گذارند: اعتبارسنجی ساختار، و
+Automated Security Baseline که کد را **اجرا نمی‌کند** و فقط الگوهای مشخصی مثل
+`curl | sh` و sudoers بی‌رمز را می‌بیند. انتشار وقتی انجام می‌شود که یک نگهدارنده
+برچسب `approved-and-verified` را بزند. برای خطا، **همان ایشو را ویرایش کنید**؛
+ایشوی تازه باز نکنید، اعتبارسنجی با هر ویرایش دوباره اجرا می‌شود.
+
+به‌روزرسانی نسخه بعداً از فرم دیگری انجام می‌شود
+([verify-plugin.yml](https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml))
+و کامیت دقیق (SHA کامل ۴۰ کاراکتری) می‌خواهد.

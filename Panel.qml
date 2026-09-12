@@ -27,7 +27,7 @@ import "Model.js" as Model
 // anchor against.
 Panel {
   id: root
-  moduleName: "masoud.jalali-calendar"
+  moduleName: "masoudyousefnejad.jalali-calendar"
   ipcTarget: "jalali-calendar"
   manageIpc: false
 

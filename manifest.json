@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "masoud.jalali-calendar",
+  "id": "masoudyousefnejad.jalali-calendar",
   "name": "Jalali Calendar",
   "version": "0.3.0",
-  "author": "masoud",
+  "author": "Masoud Yousefnejad",
   "license": "MIT",
   "description": "تقویم شمسی و میلادی در نوار اُمارچی، با فونت وزیرمتن و پشتیبانی گوگل کلندر و CalDAV — A switchable Jalali / Gregorian calendar for the Omarchy bar, with Google Calendar and CalDAV sync.",
   "kinds": [

@@ -518,8 +518,8 @@ test('eventUrlFor mirrors meetingUrlFor and is https only', () => {
 
 test('commandPathFromUrl strips the file scheme and shortens home', () => {
   assert.equal(
-    Model.commandPathFromUrl('file:///home/tmn/.config/omarchy/plugins/masoud.jalali-calendar/sync/setup', '/home/tmn'),
-    '~/.config/omarchy/plugins/masoud.jalali-calendar/sync/setup'
+    Model.commandPathFromUrl('file:///home/tmn/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar/sync/setup', '/home/tmn'),
+    '~/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar/sync/setup'
   )
 })
 

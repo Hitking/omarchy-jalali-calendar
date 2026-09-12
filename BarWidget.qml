@@ -15,7 +15,7 @@ import "Model.js" as Model
 // has no Jalali calendar and would answer every format string in Gregorian.
 BarWidget {
   id: root
-  moduleName: "masoud.jalali-calendar"
+  moduleName: "masoudyousefnejad.jalali-calendar"
 
   property date displayDate: clock.date
 
