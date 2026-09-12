@@ -166,3 +166,40 @@ test('the QML never assigns to a property of the bar', () => {
     })
   }
 })
+
+test('every signal the settings page emits is handled by the panel', () => {
+  // The settings view is a pure read-and-emit surface, so a signal nobody
+  // connected is a control that silently does nothing -- and nothing in QML
+  // complains about it.
+  // Exactly two spaces: the root's own signals. The inline components
+  // further in declare an `activated` of their own, which is theirs to
+  // handle and not the panel's.
+  const declared = matchAll(sources['SettingsView.qml'], /^ {2}signal\s+([a-zA-Z_$][\w$]*)\s*\(/gm)
+  assert.ok(declared.length > 10, `found only ${declared.length} signals to check`)
+
+  for (const name of declared) {
+    const handler = 'on' + name[0].toUpperCase() + name.slice(1)
+    assert.ok(
+      new RegExp('\\b' + handler + '\\s*:').test(sources['Panel.qml']),
+      `SettingsView emits ${name}, and Panel.qml has no ${handler}`
+    )
+  }
+})
+
+test('the password never becomes a command-line argument', () => {
+  // argv is world-readable through ps, so a mail password in one is a mail
+  // password handed to every process on the machine. It goes over stdin.
+  const commands = matchAll(sources['Panel.qml'], /^\s*command:\s*(\[[^\]]*\])/gm)
+  assert.ok(commands.length > 0, 'no Process commands found to check')
+
+  for (const command of commands) {
+    assert.ok(
+      !/password|request|secret/i.test(command),
+      `a Process command carries a secret: ${command}`
+    )
+  }
+
+  // And the process that does carry one says so by enabling stdin.
+  assert.match(sources['Panel.qml'], /stdinEnabled:\s*true/,
+    'nothing writes the request over stdin')
+})

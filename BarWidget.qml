@@ -135,6 +135,10 @@ BarWidget {
     if (panelLoader.item) panelLoader.item.toggle()
   }
 
+  function openSettings() {
+    if (panelLoader.item) panelLoader.item.openSettings()
+  }
+
   function toggleWeekStart() {
     if (panelLoader.item) panelLoader.item.toggleWeekStart()
   }
@@ -215,6 +219,7 @@ BarWidget {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.togglePanel() }
+    function settings(): void { root.openSettings() }
   }
 
   WidgetButton {

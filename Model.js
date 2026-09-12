@@ -525,8 +525,8 @@ STRINGS[JALALI] = {
   countdownNow: "هم‌اکنون",
 
   copiedRun: "کپی شد. در ترمینال اجرا کنید:",
-  noSyncRun: "هنوز تقویمی همگام‌سازی نشده. برای کپی کلیک کنید، سپس اجرا کنید:",
-  noSyncConnect: "هنوز تقویمی وصل نشده. برای کپی کلیک کنید، سپس اجرا کنید:",
+  noSyncRun: "هنوز تقویمی وصل نشده. برای وصل‌کردن اینجا کلیک کنید.",
+  noSyncConnect: "هنوز تقویمی وصل نشده. از بخش «حساب تقویم» بالا وصل کنید.",
   versionNewer: "فایل رویدادها را نسخهٔ جدیدتری نوشته است. افزونه را به‌روز کنید.",
   versionNewerShort: "فایل رویدادها را نسخهٔ جدیدتری از این افزونه نوشته است.",
   staleCheck: "ممکن است تقویم به‌روز نباشد. بررسی کنید:",
@@ -560,7 +560,40 @@ STRINGS[JALALI] = {
   minutesSuffix: " دقیقه",
   syncTitle: "همگام‌سازی",
   syncCount: "%1 رویداد از %2",
-  syncLast: "آخرین همگام‌سازی %1"
+  syncLast: "آخرین همگام‌سازی %1",
+  syncNowAction: "همگام‌سازی اکنون",
+  syncStarted: "همگام‌سازی آغاز شد…",
+
+  accountTitle: "حساب تقویم",
+  accountHint: "سرور تقویم را همین‌جا وصل کنید. برای CalDAV هیچ ترمینالی لازم نیست.",
+  caldavOption: "CalDAV",
+  googleOption: "گوگل",
+  caldavHint: "اسمارترمیل، نکست‌کلاد، رادیکاله، فست‌میل، آی‌کلاد و بیشتر سرورهای ایمیل سازمانی.",
+  serverLabel: "نشانی سرور",
+  serverHint: "ریشهٔ سرور ایمیل، همان‌جا که وبمیل را باز می‌کنید؛ نه نشانی خودِ تقویم.",
+  usernameLabel: "نام کاربری",
+  usernameHint: "معمولاً نشانی کامل ایمیل",
+  passwordLabel: "رمز عبور",
+  passwordHint: "خالی بگذارید تا رمز ذخیره‌شده دست‌نخورده بماند.",
+  passwordTwoFactor: "اگر حساب تأیید دومرحله‌ای دارد، رمز اختصاصی برنامه لازم است.",
+  verifyTlsLabel: "بررسی گواهی TLS",
+  verifyTlsHint: "فقط برای سرور داخلی با گواهی خودامضا خاموش کنید.",
+  connectAction: "اتصال",
+  reconnectAction: "به‌روزرسانی اتصال",
+  connectingNow: "در حال بررسی…",
+  connectedCount: "وصل شد. %1 تقویم پیدا شد.",
+  connectedAs: "وصل به %1",
+  notConnectedYet: "هنوز وصل نشده",
+  credentialsRefused: "سرور نپذیرفت: %1",
+  connectFailed: "وصل نشد: %1",
+  connectUnreadable: "پاسخ نامفهوم از اسکریپت اتصال.",
+  connectCrashed: "اسکریپت اتصال اجرا نشد.",
+  urlRequired: "نشانی سرور لازم است.",
+  usernameRequired: "نام کاربری لازم است.",
+  passwordRequired: "رمز عبور لازم است.",
+  timerWarning: "وصل شد، اما زمان‌بند خودکار فعال نشد: %1",
+  firstSyncWarning: "وصل شد، اما اولین همگام‌سازی موفق نبود: %1",
+  googleNeedsTerminal: "گوگل ورود در مرورگر و چند مرحله در کنسول گوگل می‌خواهد، پس از ترمینال انجام می‌شود. برای کپی کلیک کنید:"
 }
 
 STRINGS[GREGORIAN] = {
@@ -586,8 +619,8 @@ STRINGS[GREGORIAN] = {
   countdownNow: "now",
 
   copiedRun: "Copied. Paste it in a terminal:",
-  noSyncRun: "No calendar synced yet. Click to copy, then run:",
-  noSyncConnect: "No calendar connected yet. Click to copy, then run:",
+  noSyncRun: "No calendar connected yet. Click here to connect one.",
+  noSyncConnect: "No calendar connected yet. Use the calendar account section above.",
   versionNewer: "Events file was written by a newer version. Update the plugin.",
   versionNewerShort: "The events file was written by a newer version of this plugin.",
   staleCheck: "Calendar may be out of date. Check:",
@@ -621,7 +654,40 @@ STRINGS[GREGORIAN] = {
   minutesSuffix: "min",
   syncTitle: "SYNC",
   syncCount: "%1 events from %2",
-  syncLast: "Last sync %1"
+  syncLast: "Last sync %1",
+  syncNowAction: "Sync now",
+  syncStarted: "Sync started...",
+
+  accountTitle: "CALENDAR ACCOUNT",
+  accountHint: "Connect your calendar server here. CalDAV needs no terminal at all.",
+  caldavOption: "CalDAV",
+  googleOption: "Google",
+  caldavHint: "SmarterMail, Nextcloud, Radicale, Fastmail, iCloud, and most company mail servers.",
+  serverLabel: "Server URL",
+  serverHint: "The mail server root, the same host you open webmail on -- not a calendar URL.",
+  usernameLabel: "Username",
+  usernameHint: "Usually your full email address",
+  passwordLabel: "Password",
+  passwordHint: "Leave blank to keep the password already stored.",
+  passwordTwoFactor: "With two-factor authentication, this must be an app-specific password.",
+  verifyTlsLabel: "Verify the TLS certificate",
+  verifyTlsHint: "Turn off only for an in-house server with a self-signed certificate.",
+  connectAction: "Connect",
+  reconnectAction: "Update connection",
+  connectingNow: "Checking...",
+  connectedCount: "Connected. Found %1 calendars.",
+  connectedAs: "Connected as %1",
+  notConnectedYet: "Not connected yet",
+  credentialsRefused: "The server refused it: %1",
+  connectFailed: "Could not connect: %1",
+  connectUnreadable: "Unreadable reply from the connect script.",
+  connectCrashed: "The connect script would not run.",
+  urlRequired: "A server URL is required.",
+  usernameRequired: "A username is required.",
+  passwordRequired: "A password is required.",
+  timerWarning: "Connected, but the automatic timer was not enabled: %1",
+  firstSyncWarning: "Connected, but the first sync did not succeed: %1",
+  googleNeedsTerminal: "Google needs a browser login and several steps in its own console, so it is done from a terminal. Click to copy:"
 }
 
 function text(calendar, key) {
@@ -1426,6 +1492,149 @@ function eventColors(index, key, limit) {
   return colors
 }
 
+// ---- Connecting a calendar account.
+//
+// The panel collects three fields and runs sync/omarchy-calendar-connect,
+// which answers with one JSON object. Everything about that exchange that can
+// be decided without a process lives here, where a test can reach it: what a
+// request looks like, which field is missing, and what a reply means. QML is
+// left holding the text fields and the Process, which is all QML is good at.
+
+var SOURCE_CALDAV = "caldav"
+var SOURCE_GOOGLE = "google"
+
+// What the sync itself will do with this config. Absent means Google, which
+// is what config.py defaults to, so the panel and the sync never disagree
+// about a file that says nothing.
+function normalizeSource(value) {
+  return String(value || "").trim().toLowerCase() === SOURCE_CALDAV
+    ? SOURCE_CALDAV
+    : SOURCE_GOOGLE
+}
+
+// Which tab of the account form to open on, which is a different question.
+// With nothing configured at all the answer is CalDAV: it is the one that can
+// be finished on this page, and landing a new user on a form that says "run
+// this in a terminal" is how the plugin got a reputation for needing gws.
+function preferredProvider(configDoc) {
+  if (!configDoc) return SOURCE_CALDAV
+
+  var source = String(configDoc.source || "").trim().toLowerCase()
+  if (source === SOURCE_GOOGLE) return SOURCE_GOOGLE
+  if (source === SOURCE_CALDAV) return SOURCE_CALDAV
+
+  // No source key, but the file names a gws binary or a gws profile: this is
+  // a Google setup written before `source` existed.
+  return configDoc.gwsPath || configDoc.profile ? SOURCE_GOOGLE : SOURCE_CALDAV
+}
+
+// The caldav block out of calendar-sync.json, with every field present.
+// Written by the connect helper and by hand often enough that nothing in it
+// can be assumed: a file half-edited in a text editor still has to render.
+function caldavSettings(configDoc) {
+  var caldav = (configDoc && typeof configDoc === "object" && configDoc.caldav) || {}
+  return {
+    url: String(caldav.url || ""),
+    username: String(caldav.username || ""),
+    verifyTls: caldav.verifyTls !== false,
+    passwordFile: String(caldav.passwordFile || "")
+  }
+}
+
+function parseConfigDocument(raw) {
+  if (!raw) return null
+  try {
+    var parsed = JSON.parse(raw)
+    // An array is a typeof "object" too, and a config file holding one is
+    // corrupt rather than empty -- reading fields off it would quietly give
+    // every one of them back as undefined.
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null
+  } catch (error) {
+    return null
+  }
+}
+
+function connectRequest(fields) {
+  fields = fields || {}
+  return {
+    url: String(fields.url || "").trim(),
+    username: String(fields.username || "").trim(),
+    // Never trimmed. A trailing space is a legal part of a password, and
+    // silently removing it fails the login with nothing on screen to explain
+    // why the password that works in webmail does not work here.
+    password: String(fields.password === undefined || fields.password === null
+      ? "" : fields.password),
+    verifyTls: fields.verifyTls !== false
+  }
+}
+
+// Which string key to show instead of running anything. An empty return means
+// the request is worth sending.
+//
+// A blank password is only a problem when there is nothing stored: the panel
+// cannot show a password it never had, so blank means "keep the current one"
+// whenever there is a current one to keep.
+function connectRequestProblem(request, hasStoredPassword) {
+  if (!request || !request.url) return "urlRequired"
+  if (!request.username) return "usernameRequired"
+  if (!request.password && !hasStoredPassword) return "passwordRequired"
+  return ""
+}
+
+// The helper writes one JSON object on stdout. Anything else -- a python
+// traceback, an empty pipe, a shell that could not find the file -- has to
+// come back as a message rather than as an exception in a binding.
+function parseConnectReply(raw) {
+  var lines = String(raw || "").split("\n")
+  for (var i = lines.length - 1; i >= 0; i--) {
+    var line = lines[i].trim()
+    if (line === "") continue
+    try {
+      var parsed = JSON.parse(line)
+      if (parsed && typeof parsed === "object") return parsed
+    } catch (error) {
+      return null
+    }
+    return null
+  }
+  return null
+}
+
+// What the panel should say, as a string key plus the one value it takes.
+// Success is not unconditional: a connection whose timer never started is
+// still worth a sentence, because it is the difference between a calendar
+// that updates itself and one that updated once.
+function connectOutcome(raw, exitCode) {
+  var reply = parseConnectReply(raw)
+
+  if (!reply) {
+    return {
+      ok: false,
+      key: exitCode === 0 ? "connectUnreadable" : "connectCrashed",
+      value: ""
+    }
+  }
+
+  if (!reply.ok) {
+    var detail = String(reply.error || "")
+    // A refused password is worth its own sentence: it is the one failure the
+    // user can fix on this page, and "could not connect" would send them
+    // checking the URL, the network and the server first.
+    return reply.stage === "credentials"
+      ? { ok: false, key: "credentialsRefused", value: detail }
+      : { ok: false, key: "connectFailed", value: detail }
+  }
+
+  var calendars = reply.calendars && reply.calendars.length ? reply.calendars.length : 0
+
+  if (reply.timer && reply.timer !== "enabled")
+    return { ok: true, key: "timerWarning", value: String(reply.timer), calendars: calendars }
+  if (reply.firstSync && reply.firstSync !== "ok")
+    return { ok: true, key: "firstSyncWarning", value: String(reply.firstSync), calendars: calendars }
+
+  return { ok: true, key: "connectedCount", value: String(calendars), calendars: calendars }
+}
+
 // "missing" means we have nothing to show and should say so rather than
 // render an empty calendar that looks like a quiet week.
 function syncState(doc, nowMs, intervalSeconds) {
@@ -1535,6 +1744,18 @@ if (typeof module !== "undefined") {
     isOutOfOffice: isOutOfOffice,
     safeUrl: safeUrl,
     commandPathFromUrl: commandPathFromUrl,
+
+    // Connecting an account
+    SOURCE_CALDAV: SOURCE_CALDAV,
+    SOURCE_GOOGLE: SOURCE_GOOGLE,
+    normalizeSource: normalizeSource,
+    preferredProvider: preferredProvider,
+    caldavSettings: caldavSettings,
+    parseConfigDocument: parseConfigDocument,
+    connectRequest: connectRequest,
+    connectRequestProblem: connectRequestProblem,
+    parseConnectReply: parseConnectReply,
+    connectOutcome: connectOutcome,
     meetingUrlFor: meetingUrlFor,
     eventUrlFor: eventUrlFor,
     isJoinableNow: isJoinableNow,

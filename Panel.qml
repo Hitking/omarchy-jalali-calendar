@@ -192,8 +192,38 @@ Panel {
   // installed from the marketplace listing and never opened the README.
   // Resolved from this file's own location, so it is right whether the plugin
   // was installed by `omarchy plugin add` or cloned somewhere by hand.
+  //
+  // This is the Google command now: CalDAV is connected from the settings
+  // page itself, and Google is the one that cannot be, because it needs a
+  // browser login and four steps in a cloud console.
   readonly property string setupCommand: Model.commandPathFromUrl(
-    Qt.resolvedUrl("sync/setup"), Quickshell.env("HOME") || "")
+    Qt.resolvedUrl("sync/setup-google"), Quickshell.env("HOME") || "")
+
+  // The same script, as a path a process can actually run: no "~", because
+  // nothing expands it once QML hands the argv straight to exec.
+  readonly property string connectBin: Model.commandPathFromUrl(
+    Qt.resolvedUrl("sync/omarchy-calendar-connect"), "")
+
+  // ---- The sync's own config file, read so the settings page can show what
+  //      is connected and prefill the form with it. Written only through the
+  //      connect helper: this panel has no business hand-editing a file the
+  //      sync validates on every run.
+  property var syncConfig: null
+  readonly property var caldavSettings: Model.caldavSettings(syncConfig)
+  readonly property string configuredSource: Model.normalizeSource(
+    syncConfig ? syncConfig.source : "")
+
+  // Which provider the settings form is showing. Seeded from the file and
+  // then owned by the user's clicks, so opening the Google tab to read the
+  // command does not claim the account has moved to Google.
+  property string accountProvider: ""
+  readonly property string activeProvider: accountProvider !== ""
+    ? accountProvider
+    : Model.preferredProvider(syncConfig)
+
+  property string connectState: "idle"
+  property string connectMessage: ""
+  property bool connectOk: false
   readonly property string syncState: eventVersionMismatch
     ? "version"
     : Model.syncState(eventDoc, Date.now(), syncIntervalSeconds)
@@ -404,6 +434,14 @@ Panel {
     else root.open()
   }
 
+  // Straight to the settings page. Connecting an account is the one thing
+  // somebody arrives wanting to do and cannot find: it is three clicks into a
+  // popup they have never opened.
+  function openSettings() {
+    root.settingsOpen = true
+    root.open()
+  }
+
   function switchPanel(direction) {
     if (root.bar && typeof root.bar.switchPanelFrom === "function")
       return root.bar.switchPanelFrom(root.barIdentity, direction)
@@ -419,6 +457,16 @@ Panel {
   function setCenterHoverRevealSuppressed(value) {
     if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function")
       root.bar.setCenterHoverRevealSuppressed(value)
+  }
+
+  // Guarded because the settings view is inside the panel's own Flickable and
+  // is not built until the panel is, and `editingAccount` is read by the key
+  // catcher from the first key press onwards.
+  readonly property bool editingAccount: root.settingsOpen
+    && typeof settingsView !== "undefined" && settingsView && settingsView.editing === true
+
+  function returnKeyboardToPanel() {
+    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
   }
 
   function refresh() {
@@ -559,6 +607,115 @@ Panel {
     onFileChanged: reload()
   }
 
+  // The sync's config, watched for the same reason the events file is: the
+  // connect helper rewrites it, and the form above it has to agree with what
+  // was written without the shell being restarted.
+  FileView {
+    id: syncConfigFile
+    path: (Quickshell.env("HOME") || "") + "/.config/omarchy/calendar-sync.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.syncConfig = Model.parseConfigDocument(text())
+    onLoadFailed: root.syncConfig = null
+    onFileChanged: reload()
+  }
+
+  // Is there a password already stored? Inferred from the config rather than
+  // read off disk: an account that is connected was connected with a
+  // password, and the panel has no business holding a mail password in a
+  // property for the life of the popup to learn something it can deduce.
+  //
+  // It decides one thing -- whether a blank password field means "keep the
+  // current one" or "you left a field out". If the file has been deleted
+  // behind our back the helper says so, which is the right place for it.
+  readonly property bool hasStoredPassword: root.configuredSource === Model.SOURCE_CALDAV
+    && root.caldavSettings.url !== ""
+
+  // ---- Connecting. One JSON object down the pipe, one JSON object back.
+  //
+  // The password goes over stdin and never becomes an argument: argv is
+  // world-readable through ps, and this is a mail password typed into a
+  // status bar popup while the user watches.
+  Process {
+    id: connectProc
+
+    property string request: ""
+
+    command: [root.connectBin]
+    stdinEnabled: true
+
+    onStarted: {
+      write(request + "\n")
+      // Held only as long as it takes to hand over. Nothing downstream reads
+      // it back, and it must not sit in a QML property for the life of the
+      // panel.
+      request = ""
+    }
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyConnectReply(text, 0)
+    }
+
+    onExited: function(exitCode, exitStatus) {
+      // A helper that never ran writes nothing at all, so the collector above
+      // has nothing to report and this is the only place the failure shows.
+      if (root.connectState === "running") root.applyConnectReply("", exitCode)
+    }
+  }
+
+  function connectCalDav(url, username, password, verifyTls) {
+    if (root.connectState === "running") return
+
+    var request = Model.connectRequest({
+      url: url, username: username, password: password, verifyTls: verifyTls
+    })
+
+    // Asked and answered here rather than at the far end of a process: a
+    // missing username is not worth spawning python to be told about.
+    var problem = Model.connectRequestProblem(request, root.hasStoredPassword)
+    if (problem !== "") {
+      root.connectState = "done"
+      root.connectOk = false
+      root.connectMessage = root.t(problem)
+      return
+    }
+
+    root.connectState = "running"
+    root.connectOk = false
+    root.connectMessage = root.t("connectingNow")
+
+    connectProc.request = JSON.stringify(request)
+    connectProc.running = true
+  }
+
+  function applyConnectReply(raw, exitCode) {
+    var outcome = Model.connectOutcome(raw, exitCode)
+    root.connectState = "done"
+    root.connectOk = outcome.ok === true
+    root.connectMessage = outcome.value === ""
+      ? root.t(outcome.key)
+      : root.t(outcome.key).arg(outcome.value)
+
+    // The helper rewrote the config and the events file; both are watched, so
+    // nothing here has to reload them by hand.
+  }
+
+  // Between the timer's five-minute ticks. Not the connect path: this asks
+  // systemd to run the unit that is already installed, so it needs no
+  // credentials and nothing on stdin.
+  Process {
+    id: syncNowProc
+    command: ["systemctl", "--user", "start", "omarchy-calendar-sync.service"]
+  }
+
+  function syncNow() {
+    syncNowProc.running = true
+    root.connectState = "done"
+    root.connectOk = true
+    root.connectMessage = root.t("syncStarted")
+  }
+
   // Copying beats reading a long path back to yourself. Argv array rather than
   // a shell string, so there is nothing to quote.
   Process {
@@ -607,7 +764,11 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.editingLife
+      // This handler takes keys before its children do, which is what makes
+      // "t" jump to today. It has to stand down whenever a text field has the
+      // focus, or a server name cannot be typed: every letter in it would be
+      // read as a calendar shortcut instead.
+      blocked: root.editingLife || root.editingAccount
       onMoveRequested: function(dx, dy) {
         // Right-to-left means the arrow keys point the other way too:
         // pressing Left on a mirrored grid moves forward, the way it moves
@@ -1469,11 +1630,8 @@ Panel {
               readonly property bool actionable: root.syncState === "missing"
 
               readonly property string message: {
-                if (root.syncState === "missing") {
-                  return root.setupCommandCopied
-                    ? root.t("copiedRun")
-                    : root.t("noSyncRun")
-                }
+                if (root.syncState === "missing")
+                  return root.t("noSyncRun")
                 if (root.syncState === "version")
                   return root.t("versionNewer")
                 if (root.syncState === "stale")
@@ -1482,7 +1640,6 @@ Panel {
               }
 
               readonly property string command: {
-                if (root.syncState === "missing") return root.setupCommand
                 if (root.syncState === "stale") return "journalctl --user -u omarchy-calendar-sync"
                 return ""
               }
@@ -1497,9 +1654,12 @@ Panel {
                 cursorShape: Qt.PointingHandCursor
               }
 
+              // Opens the page that connects one, rather than copying a
+              // command for someone to paste into a terminal they may not
+              // have open. The form is three fields and a button now.
               TapHandler {
                 enabled: emptyState.actionable
-                onTapped: root.copySetupCommand()
+                onTapped: root.settingsOpen = true
               }
 
               Text {
@@ -1531,6 +1691,7 @@ Panel {
           //      is owned by this panel and persisted to shell.json here, so
           //      the view stays a pure read-and-emit surface.
           SettingsView {
+            id: settingsView
             visible: root.settingsOpen
             width: gridColumn.width
             anchors.horizontalCenter: parent.horizontalCenter
@@ -1554,6 +1715,22 @@ Panel {
             setupCommand: root.setupCommand
             setupCommandCopied: root.setupCommandCopied
             onSetupCommandCopyRequested: root.copySetupCommand()
+
+            accountSource: root.activeProvider
+            caldavUrl: root.caldavSettings.url
+            caldavUsername: root.caldavSettings.username
+            caldavVerifyTls: root.caldavSettings.verifyTls
+            hasStoredPassword: root.hasStoredPassword
+            connectState: root.connectState
+            connectMessage: root.connectMessage
+            connectOk: root.connectOk
+
+            onProviderPicked: function(provider) { root.accountProvider = provider }
+            onConnectRequested: function(url, username, password, verifyTls) {
+              root.connectCalDav(url, username, password, verifyTls)
+            }
+            onSyncNowRequested: root.syncNow()
+            onEditingCancelled: root.returnKeyboardToPanel()
             eventCount: root.eventDoc && root.eventDoc.events ? root.eventDoc.events.length : 0
             sourceLabel: root.eventDoc ? String(root.eventDoc.source || "") : ""
             syncedAt: root.eventDoc && root.eventDoc.syncedAt

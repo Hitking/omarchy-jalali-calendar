@@ -182,9 +182,21 @@ omarchy restart shell
 
 ## همگام‌سازی با SmarterMail (و هر CalDAV دیگر)
 
+**ساده‌ترین راه: از خود ویجت.** روی ساعت کلیک کنید، چرخ‌دنده، بخش **حساب
+تقویم**. سه فیلد و یک دکمه. هیچ ترمینالی لازم نیست:
+
+```bash
+omarchy shell jalali-calendar settings   # یا مستقیم همین
+```
+
+اگر ترجیح می‌دهید در ترمینال بمانید، همین کار را این اسکریپت می‌کند:
+
 ```bash
 ~/.config/omarchy/plugins/masoud.jalali-calendar/sync/setup-caldav
 ```
+
+هر دو مسیر یک پیاده‌سازی دارند
+(`sync/omarchy_calendar_sync/connect.py`)، پس نتیجه‌شان دقیقاً یکی است.
 
 سه چیز می‌پرسد و بقیه‌اش را خودش پیدا می‌کند:
 
@@ -196,7 +208,12 @@ omarchy restart shell
    رمز حساب. CalDAV راهی برای پرسیدن عامل دوم ندارد.
 
 پیش از آنکه چیزی در کانفیگ بنویسد، وصل می‌شود و تقویم‌ها را فهرست می‌کند. اگر
-نشد، هیچ چیز نوشته نمی‌شود.
+نشد، هیچ چیز نوشته نمی‌شود. بعد از اتصال موفق، تایمر systemd هم نصب و روشن
+می‌شود و همان لحظه یک بار همگام‌سازی می‌کند.
+
+رمز هیچ‌وقت به‌صورت آرگومان به هیچ پروسه‌ای داده نمی‌شود — نه در اسکریپت و نه
+از پنل — چون آرگومان‌ها را هر پروسه‌ای روی سیستم با `ps` می‌بیند. از stdin
+می‌رود.
 
 رمز در `~/.config/omarchy/calendar-caldav.password` با دسترسی `600` ذخیره
 می‌شود — نه در خود کانفیگ، چون کانفیگ سر از ریپوی dotfiles درمی‌آورد. اگر
@@ -214,8 +231,13 @@ password manager دارید، آن فایل را پاک کنید و `OMARCHY_CAL
 ## همگام‌سازی گوگل کلندر
 
 ```bash
-~/.config/omarchy/plugins/masoud.jalali-calendar/sync/setup
+~/.config/omarchy/plugins/masoud.jalali-calendar/sync/setup-google
 ```
+
+گوگل تنها منبعی است که از پنل وصل نمی‌شود: ورود در مرورگر می‌خواهد و چهار
+مرحلهٔ دستی در Google Cloud Console، که هیچ‌کدام در یک popup نوار وضعیت جا
+نمی‌شود. اگر نمی‌دانید کدام را می‌خواهید، `sync/setup` می‌پرسد و شما را به یکی
+از این دو می‌برد.
 
 اسکریپت همگام‌سازی دست‌نخورده از تقویم اصلی آمده و همان فایل و همان تایمر
 systemd را می‌سازد. **اگر قبلاً برای تقویم اصلی اجرایش کرده‌اید، دوباره لازم
@@ -316,9 +338,16 @@ discovery, expands recurrence rules, and translates the Windows timezone
 names Exchange-lineage servers emit. Standard library only, like the rest of
 the sync.
 
+**CalDAV connects from the widget itself** -- click the clock, then the gear,
+then CALENDAR ACCOUNT: a server URL, a username, a password, and a button.
+The panel and the script below run the same implementation, so neither can
+drift from the other. Google is the exception, and only because it needs a
+browser login and four manual steps in a cloud console.
+
 ```bash
-sync/setup          # Google Calendar
+sync/setup          # asks which, then hands over to one of these two
 sync/setup-caldav   # SmarterMail and every other CalDAV server
+sync/setup-google   # Google Calendar
 ```
 
 The one thing deliberately left alone is the data contract. Events are still

@@ -46,6 +46,83 @@ Column {
   property string setupCommand: ""
   property bool setupCommandCopied: false
 
+  // ---- The calendar account. Read from calendar-sync.json by the panel and
+  //      written back through the connect helper, so this page never touches
+  //      the config file itself.
+  property string accountSource: Model.SOURCE_GOOGLE
+  property string caldavUrl: ""
+  property string caldavUsername: ""
+  property bool caldavVerifyTls: true
+  property bool hasStoredPassword: false
+
+  // "idle" before anything is tried, "running" while the helper is out,
+  // "done" once it has answered. The message is already translated.
+  property string connectState: "idle"
+  property string connectMessage: ""
+  property bool connectOk: false
+
+  // Which provider the form is showing. Seeded from what is configured,
+  // because the first thing to see is what you already have.
+  property string provider: Model.normalizeSource(accountSource)
+  onAccountSourceChanged: root.provider = Model.normalizeSource(accountSource)
+
+  readonly property bool caldavConnected: Model.normalizeSource(accountSource) === Model.SOURCE_CALDAV
+    && caldavUrl !== ""
+
+  // Open when there is nothing connected, because then the form is the whole
+  // point of the page. Closed once it works: a connected account is a line of
+  // status, not a wall of inputs.
+  property bool accountOpen: !caldavConnected
+
+  // The toggle's own state while the form is being filled in, so turning it
+  // off and changing your mind does not need a round trip through the config
+  // file. Re-seeded whenever the file says something new.
+  property bool verifyTlsDraft: caldavVerifyTls
+  onCaldavVerifyTlsChanged: root.verifyTlsDraft = caldavVerifyTls
+
+  // Somebody is typing in this page, so the panel's key catcher must not
+  // read their keystrokes as calendar shortcuts.
+  readonly property bool editing: accountForm.editing
+
+  // Prefilled from the config file, but never over what is being typed: the
+  // sync rewrites that file every five minutes, and a form that reverted
+  // mid-sentence would be unusable.
+  onCaldavUrlChanged: if (!urlField.input.activeFocus) urlField.text = root.caldavUrl
+  onCaldavUsernameChanged: if (!usernameField.input.activeFocus) usernameField.text = root.caldavUsername
+
+  Component.onCompleted: {
+    urlField.text = root.caldavUrl
+    usernameField.text = root.caldavUsername
+  }
+
+  // A password that worked is one the helper has stored; keeping it on screen
+  // afterwards would be a password sitting in a popup for no reason.
+  onConnectOkChanged: if (connectOk) passwordField.text = ""
+
+  function submitConnect() {
+    if (root.connectState === "running") return
+    root.connectRequested(urlField.text, usernameField.text,
+      passwordField.text, root.verifyTlsDraft)
+  }
+
+  // Enter connects from any field, Tab walks to the next one, Escape hands
+  // the keyboard back to the panel. Written out rather than left to Qt's
+  // focus chain because the panel's key catcher takes keys before its
+  // children and there is no chain to fall back on.
+  function fieldKey(event, next) {
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      root.submitConnect()
+      event.accepted = true
+    } else if (event.key === Qt.Key_Tab) {
+      next.input.selectAll()
+      next.input.forceActiveFocus()
+      event.accepted = true
+    } else if (event.key === Qt.Key_Escape) {
+      root.editingCancelled()
+      event.accepted = true
+    }
+  }
+
   signal calendarToggled(string calendarId)
   signal calendarSystemPicked(string system)
   signal yearProgressToggled()
@@ -57,6 +134,10 @@ Column {
   signal hideDeclinedToggled()
   signal leadMinutesPicked(int minutes)
   signal setupCommandCopyRequested()
+  signal providerPicked(string provider)
+  signal connectRequested(string url, string username, string password, bool verifyTls)
+  signal syncNowRequested()
+  signal editingCancelled()
 
   readonly property color muted: Qt.darker(foreground, 1.5)
   readonly property color faint: Qt.darker(foreground, 1.9)
@@ -148,6 +229,290 @@ Column {
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
         }
+      }
+    }
+  }
+
+  // A pill: a tab when it sits in a row of them, a button when it stands
+  // alone. The same shape both times, because both times it is one word you
+  // click.
+  component Pill: Rectangle {
+    id: pill
+
+    property string label: ""
+    property bool active: false
+    property bool actionable: true
+
+    signal activated()
+
+    width: pillLabel.width + Style.space(12)
+    height: pillLabel.height + Style.space(5)
+    radius: height / 2
+    opacity: actionable ? 1 : 0.45
+    color: active
+      ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14)
+      : (pillHover.hovered
+        ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.07)
+        : "transparent")
+    border.width: Style.spacing.hairline
+    border.color: active ? root.muted : Qt.darker(root.foreground, 2.4)
+
+    HoverHandler {
+      id: pillHover
+      enabled: pill.actionable
+      cursorShape: Qt.PointingHandCursor
+    }
+
+    TapHandler {
+      enabled: pill.actionable
+      onTapped: pill.activated()
+    }
+
+    Text {
+      id: pillLabel
+      anchors.centerIn: parent
+      text: pill.label
+      color: pill.active ? root.foreground : root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+  }
+
+  // A labelled input. The field itself opts out of the mirroring the rest of
+  // this page inherits: a URL and a username are Latin text, and typing one
+  // into a right-to-left field puts the caret and the "https://" at the wrong
+  // end of what you are reading.
+  component Field: Column {
+    id: field
+
+    property alias input: entry
+    property alias text: entry.text
+    property string label: ""
+    property string hint: ""
+    property string placeholder: ""
+    property bool secret: false
+
+    // Raised from the field's own Keys handler rather than letting a caller
+    // attach one through the `input` alias: an attached property reached
+    // down an alias is not something QML promises to honour, and a key
+    // handler that silently never fires is the kind of thing that only shows
+    // up when somebody presses Enter and nothing happens.
+    signal keyPressed(var event)
+
+    width: parent ? parent.width : 0
+    spacing: Style.space(1)
+
+    Text {
+      text: field.label
+      color: root.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    TextField {
+      id: entry
+      LayoutMirroring.enabled: false
+      width: field.width
+      password: field.secret
+      placeholderText: field.placeholder
+      foreground: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+
+      Keys.onPressed: function(event) { field.keyPressed(event) }
+    }
+
+    Text {
+      width: field.width
+      visible: field.hint !== ""
+      text: field.hint
+      color: root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+  }
+
+  // ---- The calendar account. First on the page: there is nothing to choose
+  //      in any section below until something is connected.
+
+  SectionTitle { text: root.t("accountTitle") }
+
+  // Collapsed to one line once it works. Opening it again is how you change
+  // the password or move to another server.
+  Row {
+    width: parent.width
+    spacing: Style.space(4)
+
+    HoverHandler {
+      enabled: root.caldavConnected
+      cursorShape: Qt.PointingHandCursor
+    }
+
+    TapHandler {
+      enabled: root.caldavConnected
+      onTapped: root.accountOpen = !root.accountOpen
+    }
+
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(14)
+      visible: root.caldavConnected
+      text: root.accountOpen ? "▾" : "▸"
+      color: root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      width: parent.width - Style.space(20)
+      text: root.caldavConnected
+        ? root.t("connectedAs").arg(root.caldavUsername || root.caldavUrl)
+        : root.t("accountHint")
+      color: root.caldavConnected ? root.muted : root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+  }
+
+  Column {
+    id: accountForm
+    width: parent.width
+    visible: root.accountOpen
+    spacing: Style.space(6)
+
+    // Is anything in this form focused? The panel's key catcher takes keys
+    // before its children do -- which is what makes "t" jump to today and the
+    // arrows step the month -- so it has to stand down while someone is
+    // typing a server name into it.
+    readonly property bool editing: urlField.input.activeFocus
+      || usernameField.input.activeFocus
+      || passwordField.input.activeFocus
+
+    Row {
+      spacing: Style.space(3)
+
+      Pill {
+        label: root.t("caldavOption")
+        active: root.provider === Model.SOURCE_CALDAV
+        onActivated: root.providerPicked(Model.SOURCE_CALDAV)
+      }
+
+      Pill {
+        label: root.t("googleOption")
+        active: root.provider === Model.SOURCE_GOOGLE
+        onActivated: root.providerPicked(Model.SOURCE_GOOGLE)
+      }
+    }
+
+    // ---- CalDAV: three fields and a button, which is the whole of it.
+
+    Column {
+      width: parent.width
+      visible: root.provider === Model.SOURCE_CALDAV
+      spacing: Style.space(6)
+
+      Text {
+        width: parent.width
+        text: root.t("caldavHint")
+        color: root.faint
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
+
+      Field {
+        id: urlField
+        label: root.t("serverLabel")
+        hint: root.t("serverHint")
+        placeholder: "https://mail.example.com/"
+        onKeyPressed: function(event) { root.fieldKey(event, usernameField) }
+      }
+
+      Field {
+        id: usernameField
+        label: root.t("usernameLabel")
+        hint: root.t("usernameHint")
+        placeholder: "you@example.com"
+        onKeyPressed: function(event) { root.fieldKey(event, passwordField) }
+      }
+
+      Field {
+        id: passwordField
+        label: root.t("passwordLabel")
+        hint: root.hasStoredPassword ? root.t("passwordHint") : root.t("passwordTwoFactor")
+        secret: true
+        onKeyPressed: function(event) { root.fieldKey(event, urlField) }
+      }
+
+      ToggleRow {
+        label: root.t("verifyTlsLabel")
+        hint: root.t("verifyTlsHint")
+        checked: root.verifyTlsDraft
+        onActivated: root.verifyTlsDraft = !root.verifyTlsDraft
+      }
+
+      Row {
+        spacing: Style.space(3)
+
+        Pill {
+          label: root.connectState === "running"
+            ? root.t("connectingNow")
+            : (root.caldavConnected ? root.t("reconnectAction") : root.t("connectAction"))
+          active: true
+          actionable: root.connectState !== "running"
+          onActivated: root.submitConnect()
+        }
+
+        Pill {
+          label: root.t("syncNowAction")
+          actionable: root.caldavConnected && root.connectState !== "running"
+          onActivated: root.syncNowRequested()
+        }
+      }
+
+      Text {
+        width: parent.width
+        visible: root.connectMessage !== ""
+        text: root.connectMessage
+        color: root.connectState === "done" && !root.connectOk ? Color.urgent : root.muted
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
+    }
+
+    // ---- Google: a browser login and four steps in a cloud console, none of
+    //      which fits in a status bar popup. So this stays what it always
+    //      was: one command, copied for you.
+
+    Column {
+      width: parent.width
+      visible: root.provider === Model.SOURCE_GOOGLE
+      spacing: Style.space(1)
+
+      HoverHandler { id: googleHover; cursorShape: Qt.PointingHandCursor }
+      TapHandler { onTapped: root.setupCommandCopyRequested() }
+
+      Text {
+        width: parent.width
+        text: root.setupCommandCopied ? root.t("copiedRun") : root.t("googleNeedsTerminal")
+        color: googleHover.hovered ? root.foreground : root.faint
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
+
+      Text {
+        LayoutMirroring.enabled: false
+        width: parent.width
+        text: root.setupCommand
+        color: googleHover.hovered ? root.foreground : root.faint
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WrapAnywhere
       }
     }
   }
@@ -338,9 +703,9 @@ Column {
     }
   }
 
-  // ---- Sync status. Read-only on purpose: changing the Google account is an
-  //      OAuth browser flow, which belongs to sync/setup and not to a popup
-  //      in a status bar. What belongs here is knowing whether it is working.
+  // ---- Sync status. Whether it is working, and nothing else: connecting an
+  //      account is the section at the top of this page, and the one command
+  //      still worth showing is the one for reading the log.
 
   SectionTitle { text: root.t("syncTitle") }
 
@@ -353,14 +718,11 @@ Column {
     width: parent.width
     spacing: Style.space(1)
 
-    readonly property bool actionable: root.syncState === "missing"
-
+    // Nothing to click here. The one thing to do about a missing sync is to
+    // connect an account, which is a form at the top of this same page.
     readonly property string message: {
-      if (root.syncState === "missing") {
-        return root.setupCommandCopied
-          ? root.t("copiedRun")
-          : root.t("noSyncConnect")
-      }
+      if (root.syncState === "missing")
+        return root.t("noSyncConnect")
       if (root.syncState === "version")
         return root.t("versionNewerShort")
 
@@ -371,30 +733,14 @@ Column {
     }
 
     readonly property string command: {
-      if (root.syncState === "missing") return root.setupCommand
       if (root.syncState === "stale") return "journalctl --user -u omarchy-calendar-sync"
       return ""
-    }
-
-    readonly property color shade: syncStatus.actionable && syncHover.hovered
-      ? root.foreground
-      : root.faint
-
-    HoverHandler {
-      id: syncHover
-      enabled: syncStatus.actionable
-      cursorShape: Qt.PointingHandCursor
-    }
-
-    TapHandler {
-      enabled: syncStatus.actionable
-      onTapped: root.setupCommandCopyRequested()
     }
 
     Text {
       width: parent.width
       text: syncStatus.message
-      color: syncStatus.shade
+      color: root.faint
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.WordWrap
@@ -405,7 +751,7 @@ Column {
       width: parent.width
       visible: text !== ""
       text: syncStatus.command
-      color: syncStatus.shade
+      color: root.faint
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.WrapAnywhere
