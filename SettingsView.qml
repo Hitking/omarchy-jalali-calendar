@@ -69,10 +69,23 @@ Column {
   readonly property bool caldavConnected: Model.normalizeSource(accountSource) === Model.SOURCE_CALDAV
     && caldavUrl !== ""
 
-  // Open when there is nothing connected, because then the form is the whole
-  // point of the page. Closed once it works: a connected account is a line of
-  // status, not a wall of inputs.
-  property bool accountOpen: !caldavConnected
+  // Open by default, and only ever closed by a click or by the one-time seed
+  // below. It used to be bound to `!caldavConnected`, which meant a connect
+  // that succeeded pulled the form shut underneath the person who had just
+  // pressed the button -- taking the "it worked" message down with it, so the
+  // only feedback for a successful connect was the form vanishing.
+  property bool accountOpen: true
+  property bool accountSeeded: false
+
+  // An account that was already connected when this page opened is a line of
+  // status, not a wall of inputs, so fold it away -- once. `connectState`
+  // tells the two apart: "idle" means this page has not done anything yet,
+  // so whatever is connected was connected before we got here.
+  onCaldavConnectedChanged: {
+    if (!root.accountSeeded && root.caldavConnected && root.connectState === "idle")
+      root.accountOpen = false
+    root.accountSeeded = true
+  }
 
   // The toggle's own state while the form is being filled in, so turning it
   // off and changing your mind does not need a round trip through the config
@@ -364,13 +377,14 @@ Column {
       font.pixelSize: Style.font.caption
     }
 
+    // What is connected, right now, in one line that no collapse can hide.
     Text {
       anchors.verticalCenter: parent.verticalCenter
       width: parent.width - Style.space(20)
       text: root.caldavConnected
         ? root.t("connectedAs").arg(root.caldavUsername || root.caldavUrl)
-        : root.t("accountHint")
-      color: root.caldavConnected ? root.muted : root.faint
+        : (root.connectState === "idle" ? root.t("accountHint") : root.t("notConnectedYet"))
+      color: root.caldavConnected ? root.foreground : root.faint
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.WordWrap
@@ -473,14 +487,31 @@ Column {
         }
       }
 
-      Text {
+      // Directly under the button that caused it, because that is where the
+      // eye already is. A message at the top of a section this tall is a
+      // message nobody sees.
+      Rectangle {
         width: parent.width
+        height: connectResult.height + Style.space(6)
         visible: root.connectMessage !== ""
-        text: root.connectMessage
-        color: root.connectState === "done" && !root.connectOk ? Color.urgent : root.muted
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
+        radius: Style.cornerRadius
+        color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+
+        Text {
+          id: connectResult
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.leftMargin: Style.space(4)
+          anchors.rightMargin: Style.space(4)
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.connectMessage
+          color: root.connectState === "done" && !root.connectOk
+            ? Color.urgent
+            : root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
       }
     }
 

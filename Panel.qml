@@ -678,6 +678,7 @@ Panel {
       root.connectState = "done"
       root.connectOk = false
       root.connectMessage = root.t(problem)
+      console.log("jalali-calendar: connect refused before running,", problem)
       return
     }
 
@@ -685,12 +686,21 @@ Panel {
     root.connectOk = false
     root.connectMessage = root.t("connectingNow")
 
+    // A line in the journal for every attempt: the URL and the username, and
+    // never the password. Whether the button did anything at all is the first
+    // question asked when this goes wrong, and it should not need a debug
+    // build to answer.
+    console.log("jalali-calendar: connecting to", request.url, "as", request.username,
+      "verifyTls", request.verifyTls, "via", root.connectBin)
+
     connectProc.request = JSON.stringify(request)
     connectProc.running = true
   }
 
   function applyConnectReply(raw, exitCode) {
     var outcome = Model.connectOutcome(raw, exitCode)
+    console.log("jalali-calendar: connect finished ok =", outcome.ok,
+      "as", outcome.key, "exit", exitCode)
     root.connectState = "done"
     root.connectOk = outcome.ok === true
     root.connectMessage = outcome.value === ""
