@@ -660,8 +660,9 @@ Panel {
             width: parent.width
             height: heroRow.height
 
-            // Sits in the hero's outer margin rather than in the row itself,
-            // so turning it on and off never shifts the date off centre.
+            // Both of the hero's controls sit in its outer margins rather
+            // than in the row itself, so showing or hiding either never
+            // shifts the date off centre.
             PanelActionButton {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
@@ -670,6 +671,67 @@ Panel {
               foreground: root.contentForeground
               fontFamily: root.iconFontFamily
               onClicked: root.settingsOpen = !root.settingsOpen
+            }
+
+            // The calendar switch, on the margin opposite the gear. The
+            // settings page carries the same control, but which calendar you
+            // are reading is something you change while reading it, not a
+            // preference you go and set -- and a switch two clicks deep is a
+            // switch nobody uses twice.
+            //
+            // It names the calendar it would switch *to*, in the language
+            // currently on screen: a page written in Persian offers you
+            // "English", not "انگلیسی". The tooltip says what the click does,
+            // so the label cannot be misread as a statement of where you are.
+            Rectangle {
+              id: calendarSwitch
+
+              readonly property string targetLabel: root.t(
+                root.jalali ? "gregorianOption" : "jalaliOption")
+
+              // Hidden behind the settings page, which has its own picker.
+              // Two controls for one setting, both on screen, invites the
+              // question of whether they are the same setting.
+              visible: !root.settingsOpen
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              width: calendarSwitchLabel.implicitWidth + Style.space(14)
+              height: calendarSwitchLabel.implicitHeight + Style.space(6)
+              radius: height / 2
+              color: calendarSwitchHover.hovered
+                ? Style.hoverFillFor(root.contentForeground, Color.accent)
+                : "transparent"
+              border.width: Style.spacing.hairline
+              border.color: calendarSwitchHover.hovered
+                ? "transparent"
+                : Qt.darker(root.contentForeground, 2.4)
+
+              HoverHandler {
+                id: calendarSwitchHover
+                cursorShape: Qt.PointingHandCursor
+              }
+
+              TapHandler {
+                gesturePolicy: TapHandler.ReleaseWithinBounds
+                onTapped: root.toggleCalendar()
+              }
+
+              Text {
+                id: calendarSwitchLabel
+                anchors.centerIn: parent
+                text: calendarSwitch.targetLabel
+                color: calendarSwitchHover.hovered
+                  ? Style.hoverStateColor(root.contentForeground, Color.accent)
+                  : Qt.darker(root.contentForeground, 1.6)
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              PanelToolTip {
+                visible: calendarSwitchHover.hovered
+                text: root.t("switchTo").arg(calendarSwitch.targetLabel)
+                fontFamily: root.contentFontFamily
+              }
             }
 
             Row {

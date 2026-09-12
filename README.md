@@ -32,8 +32,11 @@ Nextcloud، Radicale، Fastmail، iCloud.
 
 ## سوییچ بین شمسی و میلادی
 
-پنل را باز کنید، چرخ‌دنده، بخش **تقویم**، و یکی از دو دکمه را بزنید. یا از خط
-فرمان:
+روی ساعت کلیک کنید و در بالای پنل، روبه‌روی چرخ‌دنده، دکمه‌ای هست با نام تقویمِ
+دیگر — در حالت شمسی «میلادی» می‌نویسد و برعکس. یک کلیک، همان‌جا که دارید تقویم
+را می‌خوانید.
+
+همین گزینه در صفحهٔ تنظیمات (چرخ‌دنده ← بخش **تقویم**) هم هست، و از خط فرمان:
 
 ```bash
 omarchy shell jalali-calendar toggleCalendar
@@ -292,6 +295,10 @@ clock outright rather than sitting beside it. A Jalali calendar opening its
 weeks on Monday and numbering them ISO would be a Gregorian calendar wearing
 Persian names, so the calendar carries all of that with it; each piece stays
 overridable, and an explicit choice survives a later switch.
+
+The switch sits in the panel's header opposite the settings gear, labelled
+with the calendar it would switch *to*. It is also on the settings page, and
+on the IPC:
 
 ```bash
 omarchy shell jalali-calendar toggleCalendar
