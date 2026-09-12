@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Executable wrapper so the sync runs without being pip installed."""
+"""Executable wrapper so the sync runs straight from the checkout."""
 
 import sys
 from pathlib import Path

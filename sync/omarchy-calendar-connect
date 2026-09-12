@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Executable wrapper for the CalDAV connect, so it runs without a pip install.
+"""Executable wrapper for the CalDAV connect, so it runs straight from the checkout.
 
 Reads one JSON request on stdin, writes one JSON result on stdout. Both the
 settings panel and sync/setup-caldav go through this, so there is a single
