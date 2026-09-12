@@ -134,3 +134,35 @@ test('the manifest defaults name a calendar the model accepts', () => {
       `the default ${key} did not render`)
   }
 })
+
+test('closing the panel hides it before anything that can throw', () => {
+  // The panel is a full-screen overlay layer that holds the keyboard. If
+  // close() throws before controller.hide() lands, the popup stays up, every
+  // key and click keeps being routed into it, and the desktop is unusable
+  // until the shell is restarted. So the hide goes first and the tidy-up
+  // after it, whatever the tidy-up happens to be that week.
+  const body = sources['Panel.qml'].match(/\n  function close\(\) \{\n([\s\S]*?)\n  \}\n/)
+  assert.ok(body, 'Panel.qml has no close() to check')
+
+  const statements = body[1]
+    .split('\n')
+    .map(line => line.replace(/^\s*\/\/.*$/, '').trim())
+    .filter(line => line !== '')
+  assert.match(statements[0], /controller\.hide\(\)/,
+    `close() does something before hiding: ${statements[0]}`)
+})
+
+test('the QML never assigns to a property of the bar', () => {
+  // A plugin is handed PluginBarApi, not the Bar itself, and its state is
+  // readonly behind setter methods there. Assigning throws a TypeError, which
+  // in a close() path is how the calendar once became impossible to dismiss.
+  for (const [name, source] of Object.entries(sources)) {
+    source.split('\n').forEach((line, index) => {
+      const code = line.replace(/\/\/.*$/, '')
+      assert.ok(
+        !/\bbar\.[A-Za-z_$][\w$]*\s*=[^=]/.test(code),
+        `${name}:${index + 1} assigns to a bar property, which the plugin facade forbids: ${line.trim()}`
+      )
+    })
+  }
+})

@@ -386,11 +386,17 @@ Panel {
   }
 
   function close() {
+    // Hiding comes first, and everything after it is tidy-up. The panel is a
+    // full-screen overlay layer that holds the keyboard: if anything below
+    // throws before the hide lands, the desktop is left with a popup it
+    // cannot dismiss and a compositor that routes every key into it. That is
+    // not a hypothetical -- it is what a readonly `centerHoverRevealSuppressed`
+    // on the plugin bar facade did here.
+    root.controller.hide()
     setCenterHoverRevealSuppressed(false)
     // Dismissing the panel mid-edit would otherwise leave the inputs up,
     // waiting behind a closed popup for the next time it opens.
     if (root.editingLife) root.cancelEditingLife()
-    root.controller.hide()
   }
 
   function toggle() {
@@ -406,9 +412,13 @@ Panel {
 
   // Summoning by hotkey moves no pointer, so a hover the bar was still
   // holding must not keep the center indicators revealed behind the panel.
+  // Through the setter, never by assignment: a plugin is handed PluginBarApi
+  // rather than the Bar itself, and the flag is readonly there. Assigning it
+  // throws, and a throw on the way out of close() is how this panel became
+  // impossible to dismiss. Both the facade and the Bar expose the method.
   function setCenterHoverRevealSuppressed(value) {
-    if (root.bar && "centerHoverRevealSuppressed" in root.bar)
-      root.bar.centerHoverRevealSuppressed = value
+    if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function")
+      root.bar.setCenterHoverRevealSuppressed(value)
   }
 
   function refresh() {
