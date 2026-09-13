@@ -9,7 +9,8 @@ import unittest
 import urllib.error
 from datetime import datetime, timezone
 
-from omarchy_calendar_sync.caldav import CalDav, CalDavAuthError, CalDavError
+from omarchy_calendar_sync.caldav import (
+    CalDav, CalDavAuthError, CalDavError, CalDavOriginError)
 
 MULTISTATUS = '<?xml version="1.0"?>\n<d:multistatus xmlns:d="DAV:" %s>%s</d:multistatus>'
 CALDAV_NS = 'xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:x="http://apple.com/ns/ical/"'
@@ -175,6 +176,94 @@ class RequestTests(unittest.TestCase):
         client.current_user_principal()
         self.assertEqual(opener.requests[-1].get_method(), "PROPFIND")
         self.assertEqual(opener.requests[-1].full_url, "https://mail.example.com/dav/")
+
+    # A redirect is the server choosing where the next request goes, and the
+    # next request carries the password. A server that names another host is
+    # asking for a credential it was never given, so the answer is no.
+    def test_a_redirect_to_another_host_does_not_take_the_password_along(self):
+        away = urllib.error.HTTPError(
+            "https://mail.example.com/", 302, "Found",
+            {"Location": "https://evil.example.net/dav/"}, None)
+        opener = FakeOpener(lambda r: away)
+        client = CalDav("https://mail.example.com", "u", "pw", opener=opener)
+        with self.assertRaises(CalDavOriginError):
+            client.current_user_principal()
+        self.assertEqual(
+            [r.full_url for r in opener.requests],
+            ["https://mail.example.com/"])
+
+    def test_a_redirect_to_plain_http_does_not_take_the_password_along(self):
+        downgrade = urllib.error.HTTPError(
+            "https://mail.example.com/", 301, "Moved",
+            {"Location": "http://mail.example.com/dav/"}, None)
+        opener = FakeOpener(lambda r: downgrade)
+        client = CalDav("https://mail.example.com", "u", "pw", opener=opener)
+        with self.assertRaises(CalDavOriginError):
+            client.request("PROPFIND", "https://mail.example.com/")
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_a_redirect_to_another_port_does_not_take_the_password_along(self):
+        moved = urllib.error.HTTPError(
+            "https://mail.example.com/", 307, "Moved",
+            {"Location": "https://mail.example.com:8443/dav/"}, None)
+        client = CalDav("https://mail.example.com", "u", "pw",
+                        opener=FakeOpener(lambda r: moved))
+        with self.assertRaises(CalDavOriginError):
+            client.request("PROPFIND", "https://mail.example.com/")
+
+    # The default port spelled out is the same server, not a new one.
+    def test_the_default_port_written_out_is_the_same_server(self):
+        moved = urllib.error.HTTPError(
+            "https://mail.example.com/", 301, "Moved",
+            {"Location": "https://MAIL.example.com:443/dav/"}, None)
+        opener = FakeOpener(responder(
+            ("/dav/", FakeResponse(207, PRINCIPAL_BODY)),
+            ("", moved),
+        ))
+        client = CalDav("https://mail.example.com", "u", "pw", opener=opener)
+        client.current_user_principal()
+        self.assertEqual(opener.requests[-1].get_method(), "PROPFIND")
+
+    # Discovery swallows failures and tries the next candidate URL. This one
+    # it must not swallow: the next candidate would fail the same way and the
+    # user would be told to check a URL that is fine.
+    def test_a_redirect_off_the_server_is_reported_not_retried(self):
+        away = urllib.error.HTTPError(
+            "https://mail.example.com/", 302, "Found",
+            {"Location": "https://evil.example.net/"}, None)
+        client = CalDav("https://mail.example.com", "u", "pw",
+                        opener=FakeOpener(lambda r: away))
+        with self.assertRaises(CalDavOriginError) as caught:
+            client.check()
+        self.assertIn("evil.example.net", str(caught.exception))
+
+    # An href in an answer is the server choosing a URL too, and discovery
+    # follows those from one hop to the next.
+    def test_an_href_pointing_off_the_server_is_refused(self):
+        away_body = PRINCIPAL_BODY.replace(
+            "<d:href>/principals/masoud@example.com/</d:href>",
+            "<d:href>https://evil.example.net/principals/</d:href>")
+        opener = FakeOpener(responder(("", FakeResponse(207, away_body))))
+        client = CalDav("https://mail.example.com", "u", "pw", opener=opener)
+        with self.assertRaises(CalDavOriginError):
+            client.calendars()
+        self.assertNotIn(
+            "evil.example.net", " ".join(r.full_url for r in opener.requests))
+
+    # The other direction is the ordinary setup, and it takes the password
+    # off the clear wire rather than putting it on one.
+    def test_http_redirected_to_https_on_the_same_host_is_followed(self):
+        upgrade = urllib.error.HTTPError(
+            "http://mail.example.com/", 301, "Moved",
+            {"Location": "https://mail.example.com/"}, None)
+        opener = FakeOpener(responder(
+            ("https://", FakeResponse(207, PRINCIPAL_BODY)),
+            ("", upgrade),
+        ))
+        client = CalDav("http://mail.example.com", "u", "pw", opener=opener)
+        client.current_user_principal()
+        self.assertEqual(
+            opener.requests[-1].full_url, "https://mail.example.com/")
 
     def test_a_redirect_loop_gives_up_rather_than_spinning(self):
         loop = urllib.error.HTTPError(

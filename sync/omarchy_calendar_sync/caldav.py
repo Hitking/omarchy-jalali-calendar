@@ -7,7 +7,9 @@ each of those accommodations is a tolerance rather than a special case.
 
 Standard library only, like the rest of this package. urllib will not send a
 PROPFIND or a REPORT on its own and will not carry a method through a
-redirect, so both are done by hand below.
+redirect, so both are done by hand below. Doing them by hand also means the
+password is ours to place: it goes to the server the user named and nowhere
+else, whatever a redirect or an href asks for.
 """
 
 import base64
@@ -39,6 +41,17 @@ class CalDavError(Exception):
     """Raised for anything that stops the sync: transport, auth or protocol."""
 
 
+class CalDavOriginError(CalDavError):
+    """A request would have carried the password to a different server.
+
+    The password belongs to the server the user typed in. A redirect or an
+    href naming another host, another port, or plain http is the server
+    asking us to hand it somewhere else, and there is no way to tell a
+    misconfigured mail server from a hostile one by looking at the answer.
+    So we stop instead of guessing.
+    """
+
+
 class CalDavAuthError(CalDavError):
     """The credentials were refused.
 
@@ -61,6 +74,7 @@ class CalDav:
         self.username = username
         self.password = password
         self.timeout = timeout
+        self._allowed_origins = _allowed_origins(self.base_url)
 
         # Injectable so the tests exercise the real request-building and
         # response-parsing without a server. Everything above this line is
@@ -91,6 +105,7 @@ class CalDav:
         usually redirects to the real DAV root.
         """
         target = url
+        self._check_origin(target, url)
         for _ in range(MAX_REDIRECTS):
             headers = {
                 "Authorization": self._auth_header(),
@@ -113,7 +128,9 @@ class CalDav:
                     location = error.headers.get("Location")
                     if not location:
                         raise CalDavError(f"{error.code} redirect with no Location")
-                    target = urllib.parse.urljoin(target, location)
+                    moved = urllib.parse.urljoin(target, location)
+                    self._check_origin(moved, url)
+                    target = moved
                     continue
                 if error.code in (401, 403):
                     raise CalDavAuthError(
@@ -131,6 +148,22 @@ class CalDav:
                 raise CalDavError(f"TLS failed for {target}: {error}") from error
 
         raise CalDavError(f"too many redirects starting at {url}")
+
+    def _check_origin(self, target, started_at):
+        """Refuse to send the password anywhere but the server the user named.
+
+        Checked for the first request as much as for a redirect: an href in
+        an answer is server-controlled too, and discovery follows those.
+        """
+        if _origin(target) in self._allowed_origins:
+            return
+        scheme, host, port = _origin(self.base_url)
+        raise CalDavOriginError(
+            f"{started_at} pointed at {target}, which is a different server "
+            f"({scheme}://{host}:{port} was the one you gave). The password "
+            "is not sent there. If the calendars really live on the other "
+            "server, give that address as the server URL."
+        )
 
     def propfind(self, url, body, depth=0):
         status, text = self.request("PROPFIND", url, body=body, depth=depth)
@@ -150,7 +183,7 @@ class CalDav:
         for start in self._discovery_roots():
             try:
                 tree = self.propfind(start, body, depth=0)
-            except CalDavAuthError:
+            except (CalDavAuthError, CalDavOriginError):
                 raise
             except CalDavError:
                 continue
@@ -274,6 +307,46 @@ class CalDav:
         """Prove the credentials and the URL work before anything else runs."""
         self.current_user_principal()
         return True
+
+
+# ---- Where the password may go.
+
+
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin(url):
+    """Scheme, host and port, spelled one way so two URLs compare equal.
+
+    https://mail.example.com/ and https://MAIL.example.com:443/dav/ are the
+    same server; https://mail.example.com/ and http://mail.example.com/ are
+    not, because the second one puts the password on the wire in the clear.
+    """
+    parts = urllib.parse.urlsplit(url)
+    scheme = (parts.scheme or "").lower()
+    host = (parts.hostname or "").lower()
+    try:
+        port = parts.port
+    except ValueError:
+        # An unparseable port is not a port we can call equal to ours.
+        port = None
+    return scheme, host, port or DEFAULT_PORTS.get(scheme)
+
+
+def _allowed_origins(base_url):
+    """The origins a request may carry the password to.
+
+    The one the user gave, plus -- when they gave a plain http URL -- the
+    same host over https. A server that answers http by redirecting to its
+    own https is the ordinary setup, and taking that hop protects a password
+    that was about to go out in the clear anyway. Every other change of
+    scheme, host or port is a different server and gets nothing.
+    """
+    origin = _origin(base_url)
+    scheme, host, port = origin
+    if scheme == "http" and port == DEFAULT_PORTS["http"]:
+        return frozenset({origin, ("https", host, DEFAULT_PORTS["https"])})
+    return frozenset({origin})
 
 
 # ---- XML helpers.
