@@ -88,9 +88,49 @@ git clone "$PWD" ~/.config/omarchy/plugins/masoudyousefnejad.jalali-calendar
 omarchy plugin enable masoudyousefnejad.jalali-calendar
 ```
 
-این افزونه **جای ساعت داخلی را می‌گیرد**. در `~/.config/omarchy/shell.json`
-مدخل `omarchy.clock` را از `bar.layout.center` بردارید و `bar.centerAnchor` را
-به این افزونه بدهید:
+### جایگزینی ساعت و تقویم پیش‌فرض
+
+نصب کردنِ افزونه، ساعت داخلی اُمارچی را برنمی‌دارد: تا وقتی خودتان برش ندارید،
+**هر دو** در نوار می‌مانند و دو ساعت کنار هم می‌بینید. این افزونه کار
+`omarchy.clock` را کامل انجام می‌دهد — همان قالب‌ها، همان کلیک‌ها، همان نوار
+عمودی — و تقویم شمسی و رویدادها را هم رویش دارد، پس دلیلی برای نگه‌داشتن هر دو
+نیست.
+
+جایش در `~/.config/omarchy/shell.json` است. اول یک نسخهٔ پشتیبان، بعد یک دستور
+که `omarchy.clock` را با این افزونه عوض می‌کند و `bar.centerAnchor` را هم به
+همین می‌دهد:
+
+```bash
+cp ~/.config/omarchy/shell.json ~/.config/omarchy/shell.json.bak
+
+jq '
+  ([.bar.layout[][].id] | index("masoudyousefnejad.jalali-calendar")) as $already
+  | .bar.centerAnchor = "masoudyousefnejad.jalali-calendar"
+  | .bar.layout |= with_entries(.value |= map(
+      if .id != "omarchy.clock" then .
+      elif $already then empty
+      else
+        {
+          id: "masoudyousefnejad.jalali-calendar",
+          format: "dddd HH:mm",
+          formatAlt: "dddd d MMMM yyyy",
+          verticalFormat: "HH\n—\nmm",
+          fontFamily: "Vazirmatn"
+        }
+      end))
+' ~/.config/omarchy/shell.json > /tmp/shell.json &&
+  mv /tmp/shell.json ~/.config/omarchy/shell.json
+
+omarchy restart shell
+```
+
+اگر افزونه را قبلاً خودتان به نوار اضافه کرده بودید، دستور بالا ساعت داخلی را
+فقط برمی‌دارد و افزونهٔ موجود را همان‌جا که هست نگه می‌دارد — دو مدخل تکراری
+درست نمی‌کند. `omarchy.clock` در هر سه بخش نوار (`left`، `center`، `right`)
+پیدا و برداشته می‌شود.
+
+دستی هم می‌شود: `omarchy.clock` را از `bar.layout` بردارید و این را جایش
+بگذارید.
 
 ```json
 {
@@ -105,9 +145,10 @@ omarchy plugin enable masoudyousefnejad.jalali-calendar
 }
 ```
 
-سپس:
+برگرداندنش هم یک دستور است، اگر پشتیبان را گرفته باشید:
 
 ```bash
+cp ~/.config/omarchy/shell.json.bak ~/.config/omarchy/shell.json
 omarchy restart shell
 ```
 
@@ -121,11 +162,26 @@ omarchy restart shell
 omarchy plugin remove masoudyousefnejad.jalali-calendar
 ```
 
-بعد در `~/.config/omarchy/shell.json` مدخل این افزونه را از `bar.layout.center`
-بردارید و ساعت داخلی را برگردانید: `omarchy.clock` را دوباره به `center` اضافه
-کنید و `bar.centerAnchor` را هم روی همان بگذارید. سپس:
+بعد ساعت داخلی را برگردانید. اگر موقع نصب پشتیبان گرفته بودید، همان کافی است:
 
 ```bash
+cp ~/.config/omarchy/shell.json.bak ~/.config/omarchy/shell.json
+omarchy restart shell
+```
+
+و اگر نه، در `~/.config/omarchy/shell.json` مدخل این افزونه را با
+`omarchy.clock` عوض کنید و `bar.centerAnchor` را هم روی همان بگذارید:
+
+```bash
+jq '
+  .bar.centerAnchor = "omarchy.clock"
+  | .bar.layout |= with_entries(.value |= map(
+      if .id == "masoudyousefnejad.jalali-calendar"
+      then { id: "omarchy.clock" }
+      else . end))
+' ~/.config/omarchy/shell.json > /tmp/shell.json &&
+  mv /tmp/shell.json ~/.config/omarchy/shell.json
+
 omarchy restart shell
 ```
 
@@ -398,9 +454,13 @@ naming a day, never the day itself.
 omarchy plugin add https://github.com/Hitking/omarchy-jalali-calendar.git --enable
 ```
 
-Then point `bar.centerAnchor` at `masoudyousefnejad.jalali-calendar` in
-`~/.config/omarchy/shell.json`, remove `omarchy.clock` from
-`bar.layout.center`, and `omarchy restart shell`.
+Installing does not take Omarchy's own clock out of the bar: both sit there
+until you remove one, and this plugin does everything `omarchy.clock` does.
+So in `~/.config/omarchy/shell.json`, point `bar.centerAnchor` at
+`masoudyousefnejad.jalali-calendar`, swap `omarchy.clock` out of
+`bar.layout` for it, and `omarchy restart shell`. There is a copy-pasteable
+`jq` for that in the Persian install section above, which also keeps a
+backup of `shell.json` to undo it with.
 
 To remove it, run `omarchy plugin remove masoudyousefnejad.jalali-calendar`,
 put `omarchy.clock` back into `bar.layout.center` and `bar.centerAnchor`, and

@@ -48,9 +48,12 @@ omarchy plugin add https://gitea.qalam.group/masoud/omarchy-jalali-calendar.git
 cp ~/.config/omarchy/shell.json ~/.config/omarchy/shell.json.bak
 
 jq '
-  .bar.centerAnchor = "masoudyousefnejad.jalali-calendar"
-  | .bar.layout.center = (.bar.layout.center | map(
-      if .id == "omarchy.clock" then
+  ([.bar.layout[][].id] | index("masoudyousefnejad.jalali-calendar")) as $already
+  | .bar.centerAnchor = "masoudyousefnejad.jalali-calendar"
+  | .bar.layout |= with_entries(.value |= map(
+      if .id != "omarchy.clock" then .
+      elif $already then empty
+      else
         {
           id: "masoudyousefnejad.jalali-calendar",
           format: "dddd HH:mm",
@@ -58,7 +61,7 @@ jq '
           verticalFormat: "HH\n—\nmm",
           fontFamily: "Vazirmatn"
         }
-      else . end))
+      end))
 ' ~/.config/omarchy/shell.json > /tmp/shell.json && mv /tmp/shell.json ~/.config/omarchy/shell.json
 
 omarchy plugin enable masoudyousefnejad.jalali-calendar
