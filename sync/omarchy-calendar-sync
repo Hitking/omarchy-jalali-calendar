@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
 """Executable wrapper so the sync runs straight from the checkout."""
 
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Python writes its bytecode cache next to the source it imports, which here
+# means inside the plugin folder. Omarchy's shell watches that folder and
+# reloads the plugin when anything in it changes -- unloading the panel, and
+# killing whatever the panel is running. So merely starting this from the
+# settings page rewrote the folder, tore the panel down, and took the connect
+# with it. The cache goes to the user's cache directory instead, which is
+# where a cache belongs and which nothing is watching.
+#
+# Set before the package is imported: after that, the writing has happened.
+_cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+sys.pycache_prefix = str(Path(_cache) / "omarchy-jalali-calendar" / "pycache")
 
 from omarchy_calendar_sync.cli import main  # noqa: E402
 
