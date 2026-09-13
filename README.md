@@ -7,8 +7,8 @@
 را کنارش نگه دارید — این افزونه جایش را کامل می‌گیرد. فونت **وزیرمتن** همراه
 خودش است و نیازی به نصب جداگانه ندارد.
 
-رویدادها از **گوگل کلندر** یا هر سرور **CalDAV** می‌آیند: SmarterMail،
-Nextcloud، Radicale، Fastmail، iCloud.
+رویدادها از **گوگل کلندر** یا هر سرور **CalDAV** می‌آیند: سرور ایمیل
+سازمانی‌تان، Nextcloud، Radicale، Fastmail، iCloud.
 
 این افزونه فورکی است از
 [tmn73/omarchy-calendar](https://github.com/tmn73/omarchy-calendar) که خودش
@@ -23,7 +23,7 @@ Nextcloud، Radicale، Fastmail، iCloud.
 |---|---|---|
 | تقویم | فقط میلادی | **شمسی یا میلادی**، با یک کلیک |
 | فونت | فونت نوار | **وزیرمتن، همراه افزونه** |
-| منبع رویداد | فقط گوگل | **گوگل یا هر CalDAV** (SmarterMail و…) |
+| منبع رویداد | فقط گوگل | **گوگل یا هر CalDAV** (سرور ایمیل سازمانی و…) |
 | سال تولد | میلادی | در تقویم فعال، ذخیره به میلادی |
 
 آنچه عوض **نشده** فایل رویدادهاست. کلید هر روز همچنان `YYYY-MM-DD` میلادی است،
@@ -210,7 +210,7 @@ systemctl --user daemon-reload
 آیکن‌ها همیشه با فونت نوار کشیده می‌شوند، چون هیچ فونت فارسی گلیف‌های Nerd Font
 را ندارد.
 
-## همگام‌سازی با SmarterMail (و هر CalDAV دیگر)
+## همگام‌سازی با سرور ایمیل سازمانی (و هر CalDAV دیگر)
 
 **ساده‌ترین راه: از خود ویجت.** روی ساعت کلیک کنید، چرخ‌دنده، بخش **حساب
 تقویم**. سه فیلد و یک دکمه. هیچ ترمینالی لازم نیست:
@@ -230,8 +230,8 @@ omarchy shell jalali-calendar settings   # یا مستقیم همین
 
 سه چیز می‌پرسد و بقیه‌اش را خودش پیدا می‌کند:
 
-1. **آدرس سرور** — برای SmarterMail همان هاستی که وبمیل را رویش باز می‌کنید،
-   مثل `https://mail.example.com/`. نه مسیر وبمیل، نه آدرس یک تقویم خاص:
+1. **آدرس سرور** — ریشهٔ سرور ایمیل: همان هاستی که حساب IMAP و وبمیل‌تان روی
+   آن است، مثل `https://mail.example.com/`. نه مسیر وبمیل، نه آدرس یک تقویم خاص:
    اسکریپت با PROPFIND از خود سرور می‌پرسد principal و تقویم‌ها کجا هستند.
 2. **نام کاربری** — معمولاً آدرس ایمیل کامل.
 3. **رمز** — اگر حساب دو مرحله‌ای است، باید **رمز اختصاصی برنامه** بسازید، نه
@@ -283,7 +283,7 @@ systemd را می‌سازد. **اگر قبلاً برای تقویم اصلی �
 
 ## منبع دیگری غیر از این دو
 
-ویجت اصلاً نمی‌داند گوگل یا SmarterMail وجود دارند. یک فایل می‌خواند و رسمش
+ویجت اصلاً نمی‌داند گوگل یا سرور ایمیل شما وجود دارند. یک فایل می‌خواند و رسمش
 می‌کند:
 
 ```
@@ -367,8 +367,9 @@ omarchy shell jalali-calendar setCalendar gregorian
 are always drawn in the bar's own font, because no Persian face carries Nerd
 Font glyphs.
 
-**Events come from Google Calendar or any CalDAV server** -- SmarterMail,
-Nextcloud, Radicale, Fastmail, iCloud. The CalDAV client does its own
+**Events come from Google Calendar or any CalDAV server** -- a company mail
+server (normally the same host as your IMAP account), Nextcloud, Radicale,
+Fastmail, iCloud. The CalDAV client does its own
 discovery, expands recurrence rules, and translates the Windows timezone
 names Exchange-lineage servers emit. Standard library only, like the rest of
 the sync.
@@ -381,7 +382,7 @@ browser login and four manual steps in a cloud console.
 
 ```bash
 sync/setup          # asks which, then hands over to one of these two
-sync/setup-caldav   # SmarterMail and every other CalDAV server
+sync/setup-caldav   # a mail server or any other CalDAV server
 sync/setup-google   # Google Calendar
 ```
 

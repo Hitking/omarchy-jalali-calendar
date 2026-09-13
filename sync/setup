@@ -16,9 +16,10 @@ choose() {
   cat <<'INTRO'
 Connecting a calendar to the Omarchy Jalali calendar widget.
 
-  1) CalDAV  -- SmarterMail, Nextcloud, Radicale, Fastmail, iCloud, Zimbra,
-                and most company mail servers. Needs a server URL, a username
-                and a password, and nothing installed.
+  1) CalDAV  -- your company mail server, Nextcloud, Radicale, Fastmail,
+                iCloud, Zimbra, and most others. Usually the same host your
+                IMAP account is on. Needs a server URL, a username and a
+                password, and nothing installed.
 
   2) Google Calendar -- needs the `gws` CLI, a Google Cloud project, and four
                 manual steps in the Google console. Only worth it if your
@@ -47,7 +48,7 @@ if [ ! -t 0 ]; then
   cat >&2 <<'EOF2'
 This picks between two setups and stdin is not a terminal, so it cannot ask.
 
-  CalDAV (SmarterMail, Nextcloud, Radicale, Fastmail, iCloud):
+  CalDAV (your mail server, Nextcloud, Radicale, Fastmail, iCloud):
     sync/setup-caldav
 
   Google Calendar:

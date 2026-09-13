@@ -19,10 +19,10 @@ SOURCES = (SOURCE_GOOGLE, SOURCE_CALDAV)
 
 DEFAULTS = {
     "source": SOURCE_GOOGLE,
-    # CalDAV, which is what SmarterMail speaks -- and Nextcloud, Radicale,
-    # Fastmail and iCloud with it. The password is read from a file rather
-    # than held here: config lands in a git-managed dotfiles repo often
-    # enough that a mail password in it is a matter of time.
+    # CalDAV, which is what company mail servers speak -- and Nextcloud,
+    # Radicale, Fastmail and iCloud with it. The password is read from a
+    # file rather than held here: config lands in a git-managed dotfiles
+    # repo often enough that a mail password in it is a matter of time.
     "caldav": {
         "url": "",
         "username": "",

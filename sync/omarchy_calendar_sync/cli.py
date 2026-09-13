@@ -1,8 +1,8 @@
 """Entry point. Orchestrates config, a source, normalization, and the write.
 
 Two sources, one output. Google Calendar through `gws`, and CalDAV -- which
-is what SmarterMail speaks, along with Nextcloud, Radicale, Fastmail and
-iCloud. Which one runs is `source` in the config; everything downstream of
+is what company mail servers speak, along with Nextcloud, Radicale, Fastmail
+and iCloud. Which one runs is `source` in the config; everything downstream of
 fetching is shared, so both write the same file in the same shape.
 """
 
@@ -237,8 +237,8 @@ def main(argv=None):
         prog="omarchy-calendar-sync",
         description=(
             "Sync a calendar into the Omarchy calendar widget file, from "
-            "Google Calendar or any CalDAV server (SmarterMail, Nextcloud, "
-            "Radicale, Fastmail)."
+            "Google Calendar or any CalDAV server (your mail server, "
+            "Nextcloud, Radicale, Fastmail)."
         ),
     )
     parser.add_argument("--config", default=None, help="path to calendar-sync.json")

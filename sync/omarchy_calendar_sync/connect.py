@@ -7,8 +7,9 @@ panel does and what the terminal does cannot drift apart -- and the panel is
 not left reimplementing credential checks, file permissions and unit
 installation in QML, where none of that belongs.
 
-Nothing here is SmarterMail-specific. CalDAV is a standard, so the same path
-reaches Nextcloud, Radicale, Fastmail, Zimbra and iCloud.
+Nothing here is tied to one vendor. CalDAV is a standard, so the same path
+reaches a company mail server, Nextcloud, Radicale, Fastmail, Zimbra and
+iCloud.
 
 The order matters and is deliberate: prove the credentials before writing
 anything. A typo should leave no half-configured sync behind for someone to

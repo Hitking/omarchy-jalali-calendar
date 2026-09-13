@@ -5,7 +5,7 @@ module needs is passed in, which is what makes the timezone behaviour
 testable without freezing time.
 
 Two sources feed this: Google Calendar resources through `normalize_all`, and
-iCalendar occurrences -- CalDAV, so SmarterMail and anything else standard --
+iCalendar occurrences -- CalDAV, so any mail server that speaks it --
 through `normalize_occurrences`. Both funnel into `rows_for_occurrence`, so
 the row shape cannot drift between them: there is one place that decides what
 a row looks like, and it is the same one for both.
@@ -205,7 +205,7 @@ def _covered_days(start_dt, end_dt, all_day):
     return days
 
 
-# ---- The iCalendar side: CalDAV, so SmarterMail and anything else standard.
+# ---- The iCalendar side: CalDAV, so any server that speaks the standard.
 
 # iCalendar spells participation status differently from Google. The contract
 # speaks Google's vocabulary because that is what shipped first and what the

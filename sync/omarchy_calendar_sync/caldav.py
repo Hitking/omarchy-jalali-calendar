@@ -1,9 +1,11 @@
-"""A CalDAV client, for SmarterMail and every other server that speaks it.
+"""A CalDAV client, for company mail servers and everything else speaking it.
 
-SmarterMail is the reason this exists, but nothing here is specific to it:
-CalDAV is a standard, so the same code reaches Nextcloud, Radicale, Fastmail,
-Zimbra and iCloud. Where SmarterMail needed accommodating it is marked, and
-each of those accommodations is a tolerance rather than a special case.
+A company mail server is the reason this exists, but nothing here is tied to
+one product: CalDAV is a standard, so the same code reaches Nextcloud,
+Radicale, Fastmail, Zimbra and iCloud. The server to point it at is normally
+the host the account's IMAP and webmail are on. Where a particular server
+needed accommodating it is marked, and each of those accommodations is a
+tolerance rather than a special case.
 
 Standard library only, like the rest of this package. urllib will not send a
 PROPFIND or a REPORT on its own and will not carry a method through a
@@ -135,9 +137,9 @@ class CalDav:
                 if error.code in (401, 403):
                     raise CalDavAuthError(
                         "the server rejected the username or password (401). "
-                        "SmarterMail accounts with two-factor authentication "
-                        "need an application-specific password, not the "
-                        "account password."
+                        "An account with two-factor authentication needs an "
+                        "application-specific password, not the account "
+                        "password."
                     ) from error
                 raise CalDavError(
                     f"{method} {target} failed: {error.code} {error.reason}"
@@ -201,8 +203,8 @@ class CalDav:
         return [
             root,
             urllib.parse.urljoin(root, "/.well-known/caldav"),
-            # SmarterMail's own endpoint, tried last so a standards-compliant
-            # answer always wins over a vendor path.
+            # A vendor path some mail servers publish instead, tried last so
+            # a standards-compliant answer always wins over it.
             urllib.parse.urljoin(root, "/caldav.aspx"),
         ]
 

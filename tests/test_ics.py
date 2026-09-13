@@ -56,8 +56,8 @@ class TimezoneTests(unittest.TestCase):
     def test_an_iana_name_resolves(self):
         self.assertEqual(ics.resolve_timezone("Asia/Tehran", UTC), TEHRAN)
 
-    # Exchange-lineage servers, SmarterMail among them, write Windows zone
-    # names where the standard asks for IANA ones.
+    # Exchange-lineage servers write Windows zone names where the standard
+    # asks for IANA ones.
     def test_a_windows_name_resolves_through_the_table(self):
         self.assertEqual(ics.resolve_timezone("Iran Standard Time", UTC), TEHRAN)
 

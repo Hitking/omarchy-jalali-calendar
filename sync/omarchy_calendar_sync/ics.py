@@ -20,8 +20,8 @@ import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-# Exchange, and every server that grew up speaking to it -- SmarterMail
-# included -- writes Windows zone names where the standard asks for IANA ones.
+# Exchange, and every server that grew up speaking to it, writes Windows
+# zone names where the standard asks for IANA ones.
 # Only the zones a person is plausibly in; anything missing falls back to the
 # local zone, which is right for the overwhelmingly common case of a calendar
 # kept in the timezone its owner lives in.

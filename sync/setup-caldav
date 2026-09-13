@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Interactive setup for the CalDAV sync: SmarterMail, Nextcloud, Radicale,
-# Fastmail, iCloud, or anything else that speaks the standard.
+# Interactive setup for the CalDAV sync: company mail servers, Nextcloud,
+# Radicale, Fastmail, iCloud, or anything else that speaks the standard.
 #
 # Unlike the Google flow next door, this needs nothing from a cloud console:
 # a URL, a username and a password is the whole of it.
@@ -31,10 +31,10 @@ Connecting a CalDAV calendar.
 
 You need three things:
 
-  1. The server URL. For SmarterMail this is the mail server root, the same
-     host you open webmail on, for example https://mail.example.com/ --
-     not the webmail path, and not a calendar-specific URL. The rest is
-     discovered by asking the server.
+  1. The server URL: the mail server root, the same host your IMAP account
+     and webmail are on, for example https://mail.example.com/ -- not the
+     webmail path, and not a calendar-specific URL. The rest is discovered
+     by asking the server.
   2. Your username, usually the full email address.
   3. Your password. If the account has two-factor authentication, this must
      be an application-specific password, not the account password: CalDAV
