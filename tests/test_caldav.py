@@ -17,14 +17,23 @@ CALDAV_NS = 'xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:x="http://apple.com/n
 
 
 class FakeResponse:
-    def __init__(self, status, body):
+    def __init__(self, status, body, headers=None):
         self.status = status
-        self._body = body.encode("utf-8")
+        self._body = body.encode("utf-8") if isinstance(body, str) else body
+        self.headers = headers or {}
+        self.bytes_read = 0
 
-    def read(self):
-        return self._body
+    def read(self, amount=-1):
+        if amount is None or amount < 0:
+            amount = len(self._body)
+        chunk = self._body[self.bytes_read:self.bytes_read + amount]
+        self.bytes_read += len(chunk)
+        return chunk
 
     def __enter__(self):
+        # The scripts hand the same answer to every request that matches, so
+        # each one reads it from the start.
+        self.bytes_read = 0
         return self
 
     def __exit__(self, *exc):
@@ -538,6 +547,156 @@ class RunCalDavTests(unittest.TestCase):
                                   out, ZoneInfo("Asia/Tehran"))
             self.assertEqual(code, 1)
             self.assertFalse(out.exists(), "a failed sync leaves the old file alone")
+
+
+
+class EndlessBody:
+    """A body that never ends, like a server that keeps on sending."""
+
+    status = 207
+    headers = {}
+
+    def __init__(self):
+        self.bytes_read = 0
+
+    def read(self, amount=-1):
+        assert amount and amount > 0, "an unbounded read of an endless body"
+        self.bytes_read += amount
+        return b" " * amount
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def event_multistatus(count, data="BEGIN:VCALENDAR&#13;\nEND:VCALENDAR"):
+    one = ("<d:response><d:href>/e.ics</d:href><d:propstat>"
+           "<d:status>HTTP/1.1 200 OK</d:status>"
+           f"<d:prop><c:calendar-data>{data}</c:calendar-data></d:prop>"
+           "</d:propstat></d:response>")
+    return MULTISTATUS % (CALDAV_NS, one * count)
+
+
+# The sync runs every few minutes unattended, so what a server sends back is
+# bounded before it is held, not after.
+class BoundTests(unittest.TestCase):
+    WINDOW = (datetime(2026, 8, 1, tzinfo=timezone.utc),
+              datetime(2026, 9, 1, tzinfo=timezone.utc))
+
+    def test_an_endless_body_is_cut_off_at_the_limit(self):
+        from omarchy_calendar_sync import caldav
+        body = EndlessBody()
+        client = CalDav("https://x/", "u", "p", opener=FakeOpener(lambda r: body))
+        with self.assertRaises(CalDavError) as caught:
+            client.events("https://x/cal/", *self.WINDOW)
+        self.assertIn("KiB", str(caught.exception))
+        self.assertEqual(body.bytes_read, caldav.MAX_REPORT_BYTES + 1)
+
+    def test_a_declared_length_over_the_limit_is_refused_unread(self):
+        from omarchy_calendar_sync import caldav
+        response = FakeResponse(207, PRINCIPAL_BODY, {
+            "Content-Length": str(caldav.MAX_DISCOVERY_BYTES + 1)})
+        client = CalDav("https://x/", "u", "p",
+                        opener=FakeOpener(lambda r: response))
+        with self.assertRaises(CalDavError):
+            client.request("PROPFIND", "https://x/")
+        self.assertEqual(response.bytes_read, 0)
+
+    # Discovery is one URL per answer, so it gets a far smaller allowance than
+    # a REPORT carrying a month of events.
+    def test_discovery_is_held_to_a_smaller_limit_than_a_report(self):
+        from omarchy_calendar_sync import caldav
+        big = event_multistatus(1, "x" * (caldav.MAX_DISCOVERY_BYTES + 1))
+        client = CalDav("https://x/", "u", "p", opener=FakeOpener(
+            lambda r: FakeResponse(207, big)))
+        with self.assertRaises(CalDavError):
+            client.propfind("https://x/", "<x/>", depth=0)
+        client.events("https://x/cal/", *self.WINDOW)
+
+    def test_a_server_still_trickling_after_the_deadline_is_cut_off(self):
+        from unittest import mock
+        from omarchy_calendar_sync import caldav
+        clock = iter(range(0, 10 ** 6, 60))
+        client = CalDav("https://x/", "u", "p",
+                        opener=FakeOpener(lambda r: EndlessBody()))
+        with mock.patch.object(caldav.time, "monotonic", lambda: next(clock)):
+            with self.assertRaises(CalDavError) as caught:
+                client.request("PROPFIND", "https://x/")
+        self.assertIn("still sending", str(caught.exception))
+
+    def test_too_many_events_are_refused_rather_than_held(self):
+        from unittest import mock
+        from omarchy_calendar_sync import caldav
+        client = CalDav("https://x/", "u", "p", opener=FakeOpener(
+            lambda r: FakeResponse(207, event_multistatus(4))))
+        with mock.patch.object(caldav, "MAX_EVENTS", 3):
+            with self.assertRaises(CalDavError):
+                client.events("https://x/cal/", *self.WINDOW)
+        self.assertEqual(len(client.events("https://x/cal/", *self.WINDOW)), 4)
+
+    def test_too_many_multistatus_entries_are_refused(self):
+        from unittest import mock
+        from omarchy_calendar_sync import caldav
+        client = CalDav("https://x/", "u", "p", opener=FakeOpener(
+            lambda r: FakeResponse(207, event_multistatus(4))))
+        with mock.patch.object(caldav, "MAX_RESPONSES", 3):
+            with self.assertRaises(CalDavError):
+                client.events("https://x/cal/", *self.WINDOW)
+
+    def test_an_oversized_event_is_refused(self):
+        from unittest import mock
+        from omarchy_calendar_sync import caldav
+        client = CalDav("https://x/", "u", "p", opener=FakeOpener(
+            lambda r: FakeResponse(207, event_multistatus(1, "x" * 101))))
+        with mock.patch.object(caldav, "MAX_EVENT_CHARS", 100):
+            with self.assertRaises(CalDavError):
+                client.events("https://x/cal/", *self.WINDOW)
+
+    def test_too_many_calendars_are_refused(self):
+        from unittest import mock
+        from omarchy_calendar_sync import caldav
+        client, _ = discovering_client()
+        with mock.patch.object(caldav, "MAX_CALENDARS", 1):
+            with self.assertRaises(CalDavError):
+                client.calendars()
+
+    def test_a_calendar_name_is_truncated(self):
+        from unittest import mock
+        from omarchy_calendar_sync import caldav
+        client, _ = discovering_client()
+        with mock.patch.object(caldav, "MAX_NAME_CHARS", 3):
+            names = [c["name"] for c in client.calendars()]
+        self.assertTrue(all(len(name) <= 3 for name in names), names)
+
+    def test_an_overlong_href_is_not_followed(self):
+        long_body = PRINCIPAL_BODY.replace(
+            "/principals/masoud@example.com/", "/p/" + "a" * 5000 + "/")
+        client = CalDav("https://x/", "u", "p", opener=FakeOpener(
+            lambda r: FakeResponse(207, long_body)))
+        with self.assertRaises(CalDavError):
+            client.current_user_principal()
+
+    # Entity expansion turns a body under the limit into one far over it.
+    def test_xml_with_a_dtd_is_refused(self):
+        bomb = ('<?xml version="1.0"?><!DOCTYPE d [<!ENTITY a "aaaa">]>'
+                '<d:multistatus xmlns:d="DAV:">&a;</d:multistatus>')
+        client = CalDav("https://x/", "u", "p", opener=FakeOpener(
+            lambda r: FakeResponse(207, bomb)))
+        with self.assertRaises(CalDavError) as caught:
+            client.propfind("https://x/", "<x/>")
+        self.assertIn("DTD", str(caught.exception))
+
+    def test_an_error_body_is_closed_without_being_read(self):
+        import io
+        body = io.BytesIO(b"x" * 1024)
+        denied = urllib.error.HTTPError("https://x/", 500, "Oops", {}, body)
+        client = CalDav("https://x/", "u", "p",
+                        opener=FakeOpener(lambda r: denied))
+        with self.assertRaises(CalDavError):
+            client.request("PROPFIND", "https://x/")
+        self.assertTrue(body.closed)
 
 
 

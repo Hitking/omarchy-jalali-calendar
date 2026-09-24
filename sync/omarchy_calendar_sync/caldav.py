@@ -16,6 +16,7 @@ else, whatever a redirect or an href asks for.
 
 import base64
 import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -37,6 +38,29 @@ FALLBACK_COLORS = (
 )
 
 MAX_REDIRECTS = 5
+
+# What a server may make us hold. The sync runs every few minutes on its own,
+# so a server that answers with an endless body -- by accident or on purpose
+# -- must not be able to grow the process until the laptop swaps. Every
+# figure is far past what a real account sends and far short of harm.
+#
+# Bodies, per kind of request: a discovery hop names one URL, a calendar
+# listing names a few dozen collections, a REPORT carries a window of events.
+MAX_DISCOVERY_BYTES = 256 * 1024
+MAX_LISTING_BYTES = 2 * 1024 * 1024
+MAX_REPORT_BYTES = 16 * 1024 * 1024
+# A socket timeout bounds each wait, not the whole answer: a server that
+# sends a byte just inside every timeout never trips it.
+MAX_RESPONSE_SECONDS = 120
+READ_CHUNK = 64 * 1024
+
+# What a body may contain, counted before anything is normalized.
+MAX_RESPONSES = 5000
+MAX_CALENDARS = 200
+MAX_EVENTS = 20000
+MAX_EVENT_CHARS = 1024 * 1024
+MAX_HREF_CHARS = 2048
+MAX_NAME_CHARS = 256
 
 
 class CalDavError(Exception):
@@ -98,13 +122,17 @@ class CalDav:
         raw = f"{self.username}:{self.password}".encode("utf-8")
         return "Basic " + base64.b64encode(raw).decode("ascii")
 
-    def request(self, method, url, body=None, depth=None):
+    def request(self, method, url, body=None, depth=None,
+                limit=MAX_DISCOVERY_BYTES):
         """One WebDAV request, following redirects without losing the method.
 
         urllib turns a redirected POST into a GET, which for a REPORT means
         the server answers with a web page and the parse fails somewhere far
         away from the cause. Redirects are common here: a bare hostname
         usually redirects to the real DAV root.
+
+        The answer is read up to `limit` bytes and no further; see
+        _read_bounded.
         """
         target = url
         self._check_origin(target, url)
@@ -124,8 +152,13 @@ class CalDav:
 
             try:
                 with self._opener.open(request, timeout=self.timeout) as response:
-                    return response.status, response.read().decode("utf-8", "replace")
+                    raw = _read_bounded(response, limit, f"{method} {target}")
+                    return response.status, raw.decode("utf-8", "replace")
             except urllib.error.HTTPError as error:
+                # An error's body is never read -- the status and headers
+                # say all we use -- so it is closed unread, not left for
+                # the collector with a connection still attached.
+                error.close()
                 if error.code in (301, 302, 307, 308):
                     location = error.headers.get("Location")
                     if not location:
@@ -168,7 +201,9 @@ class CalDav:
         )
 
     def propfind(self, url, body, depth=0):
-        status, text = self.request("PROPFIND", url, body=body, depth=depth)
+        limit = MAX_LISTING_BYTES if depth else MAX_DISCOVERY_BYTES
+        status, text = self.request(
+            "PROPFIND", url, body=body, depth=depth, limit=limit)
         if status not in (207, 200):
             raise CalDavError(f"PROPFIND {url} returned {status}, expected 207")
         return _parse_xml(text)
@@ -226,11 +261,14 @@ class CalDav:
         tree = self.propfind(home, body, depth=1)
 
         found = []
-        for response in tree.findall("d:response", NS):
+        for response in _responses(tree, home):
             href_node = response.find("d:href", NS)
             if href_node is None or not (href_node.text or "").strip():
                 continue
-            url = urllib.parse.urljoin(home, href_node.text.strip())
+            href = href_node.text.strip()
+            if len(href) > MAX_HREF_CHARS:
+                continue
+            url = urllib.parse.urljoin(home, href)
 
             propstat = _ok_propstat(response)
             if propstat is None:
@@ -254,14 +292,20 @@ class CalDav:
 
             name_node = propstat.find("d:prop/d:displayname", NS)
             name = (name_node.text or "").strip() if name_node is not None else ""
+            name = name[:MAX_NAME_CHARS]
 
             color_node = propstat.find("d:prop/x:calendar-color", NS)
             color = _normalize_color(color_node.text if color_node is not None else "")
 
+            if len(found) >= MAX_CALENDARS:
+                raise CalDavError(
+                    f"{home} lists more than {MAX_CALENDARS} calendars; "
+                    "refusing to read them all"
+                )
             found.append(
                 {
                     "id": url,
-                    "name": name or _name_from_url(url),
+                    "name": name or _name_from_url(url)[:MAX_NAME_CHARS],
                     "color": color,
                     "url": url,
                 }
@@ -290,19 +334,33 @@ class CalDav:
             "</c:calendar-query>\n"
         )
 
-        status, text = self.request("REPORT", calendar_url, body=body, depth=1)
+        status, text = self.request("REPORT", calendar_url, body=body, depth=1,
+                                    limit=MAX_REPORT_BYTES)
         if status not in (207, 200):
             raise CalDavError(f"REPORT {calendar_url} returned {status}, expected 207")
 
         tree = _parse_xml(text)
         objects = []
-        for response in tree.findall("d:response", NS):
+        for response in _responses(tree, calendar_url):
             propstat = _ok_propstat(response)
             if propstat is None:
                 continue
             data = propstat.find("d:prop/c:calendar-data", NS)
-            if data is not None and (data.text or "").strip():
-                objects.append(data.text)
+            if data is None or not (data.text or "").strip():
+                continue
+            # Refused rather than skipped: dropping an event without a word
+            # would be a calendar that is quietly wrong.
+            if len(data.text) > MAX_EVENT_CHARS:
+                raise CalDavError(
+                    f"{calendar_url} returned an event over "
+                    f"{MAX_EVENT_CHARS // 1024} KiB; refusing to parse it"
+                )
+            if len(objects) >= MAX_EVENTS:
+                raise CalDavError(
+                    f"{calendar_url} returned more than {MAX_EVENTS} events "
+                    "in the sync window; refusing to read them all"
+                )
+            objects.append(data.text)
         return objects
 
     def check(self):
@@ -363,11 +421,74 @@ def _propfind_body(props):
     )
 
 
+def _read_bounded(response, limit, what):
+    """The body of `response`, or CalDavError once it passes `limit` bytes.
+
+    A declared length over the limit is refused before a byte is read. An
+    undeclared or understated one is read a chunk at a time, never asking
+    for more than one byte past the limit, and refused once that byte comes:
+    the most ever held is the limit plus one byte.
+    The clock is checked between chunks for the same reason: a server that
+    keeps sending never lets the socket timeout fire.
+    """
+    headers = getattr(response, "headers", None)
+    declared = headers.get("Content-Length") if headers is not None else None
+    if declared is not None:
+        try:
+            length = int(declared)
+        except ValueError:
+            length = None
+        if length is not None and length > limit:
+            raise CalDavError(
+                f"{what} answered with {length} bytes, over the "
+                f"{limit // 1024} KiB this request is allowed"
+            )
+
+    # read1 returns what has arrived instead of waiting to fill the chunk,
+    # which is what lets the deadline below be checked on a slow trickle.
+    read = getattr(response, "read1", None) or response.read
+    deadline = time.monotonic() + MAX_RESPONSE_SECONDS
+    chunks = []
+    total = 0
+    while True:
+        chunk = read(min(READ_CHUNK, limit + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise CalDavError(
+                f"{what} answered with more than the {limit // 1024} KiB "
+                "this request is allowed"
+            )
+        chunks.append(chunk)
+        if time.monotonic() > deadline:
+            raise CalDavError(
+                f"{what} was still sending after {MAX_RESPONSE_SECONDS} seconds"
+            )
+    return b"".join(chunks)
+
+
 def _parse_xml(text):
+    # A multistatus never needs a DTD, and a DTD is where entity expansion
+    # lives: a small body that declares entities can unfold into far more
+    # than the byte limit above let in.
+    if "<!DOCTYPE" in text or "<!ENTITY" in text:
+        raise CalDavError("the server's XML declared a DTD, which is not accepted")
     try:
         return ET.fromstring(text)
     except ET.ParseError as error:
         raise CalDavError(f"the server did not return XML: {error}") from error
+
+
+def _responses(tree, url):
+    """The d:response elements of a multistatus, refused past MAX_RESPONSES."""
+    responses = tree.findall("d:response", NS)
+    if len(responses) > MAX_RESPONSES:
+        raise CalDavError(
+            f"{url} answered with {len(responses)} entries, over the "
+            f"{MAX_RESPONSES} accepted"
+        )
+    return responses
 
 
 def _ok_propstat(response):
@@ -386,7 +507,7 @@ def _ok_propstat(response):
 
 
 def _first_href(tree, prop_path):
-    for response in tree.findall("d:response", NS):
+    for response in _responses(tree, "the server"):
         propstat = _ok_propstat(response)
         if propstat is None:
             continue
@@ -394,8 +515,9 @@ def _first_href(tree, prop_path):
         if node is None:
             continue
         href = node.find("d:href", NS)
-        if href is not None and (href.text or "").strip():
-            return href.text.strip()
+        text = (href.text or "").strip() if href is not None else ""
+        if text and len(text) <= MAX_HREF_CHARS:
+            return text
     return ""
 
 
