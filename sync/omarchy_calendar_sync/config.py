@@ -5,7 +5,10 @@ with no file at all.
 """
 
 import copy
+import errno
 import json
+import os
+import stat
 from datetime import timedelta
 from pathlib import Path
 
@@ -174,32 +177,70 @@ def read_password(cfg):
     """The CalDAV password, from the environment or the file named in config.
 
     OMARCHY_CALDAV_PASSWORD wins so a password manager can supply it without
-    ever writing it to disk. The file is the fallback, and its permissions are
-    checked rather than assumed: a mail password readable by every process on
-    the machine is worth one line of complaint.
+    ever writing it to disk. The file is the fallback, and only a file that is
+    this user's alone will do: see read_password_file.
     """
-    import os
-    import stat
-    import sys
-
     from_env = os.environ.get("OMARCHY_CALDAV_PASSWORD")
     if from_env:
         return from_env
 
     path = Path(str(cfg.get("caldav", {}).get("passwordFile") or "")).expanduser()
-    if not path.exists():
+    stored = read_password_file(path)
+    if stored is None:
         raise ConfigError(
             f"no password: set OMARCHY_CALDAV_PASSWORD or create {path} "
             "containing the password on one line"
         )
+    return stored
+
+
+def read_password_file(path):
+    """The password stored in a file, or None when there is no file.
+
+    The file has to belong to this user and be closed to everyone else, or it
+    is refused -- not warned about. A warning lands in a journal nobody reads
+    while the sync goes on sending a password every other account on the
+    machine could have copied, or rewritten. A symlink is refused as well:
+    whoever can write the directory it sits in would get to choose which of
+    the user's files goes to the server as the password.
+
+    The checks run on the open descriptor, not on the name, so the file that
+    passed them is the file that is read. The open does not block, so a FIFO
+    left at the name is refused rather than hanging the sync.
+    """
+    path = Path(path)
+    try:
+        handle = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise ConfigError(
+                f"{path} is a symbolic link; the password has to be in a plain file"
+            ) from error
+        raise ConfigError(f"cannot read {path}: {error}") from error
 
     try:
-        mode = path.stat().st_mode
-        if mode & (stat.S_IRWXG | stat.S_IRWXO):
-            print(
-                f"warning: {path} is readable by others; run: chmod 600 {path}",
-                file=sys.stderr,
-            )
-        return path.read_text().strip()
-    except OSError as error:
+        problem = _password_file_problem(path, os.fstat(handle))
+        if problem:
+            raise ConfigError(problem)
+        with open(handle, encoding="utf-8", closefd=False) as stream:
+            return stream.read().strip()
+    except (OSError, UnicodeDecodeError) as error:
         raise ConfigError(f"cannot read {path}: {error}") from error
+    finally:
+        os.close(handle)
+
+
+def _password_file_problem(path, status):
+    """Why the file at path cannot hold the password, or "" if it can."""
+    if not stat.S_ISREG(status.st_mode):
+        return f"{path} is not a regular file"
+    if status.st_uid != os.geteuid():
+        return f"{path} belongs to another user; create it again as yourself"
+    if status.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        return (
+            f"{path} is open to other users (mode "
+            f"{stat.S_IMODE(status.st_mode):04o}); run: chmod 600 {path}"
+        )
+    return ""

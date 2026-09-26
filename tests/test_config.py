@@ -1,8 +1,11 @@
 import json
+import os
+import signal
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 from omarchy_calendar_sync import config
 
@@ -116,6 +119,87 @@ class TestWindowBounds(unittest.TestCase):
         time_min, time_max = config.window_bounds(cfg, now)
         self.assertTrue(time_min.startswith("2026-08-09"))
         self.assertTrue(time_max.startswith("2026-08-12"))
+
+
+class TestReadPassword(unittest.TestCase):
+    """The file is used only when it is this user's alone. Anything looser is
+    an error that stops the sync, not a warning it prints and then ignores."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "caldav.password"
+        self.cfg = {"caldav": {"passwordFile": str(self.path)}}
+
+        environment = mock.patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("OMARCHY_CALDAV_PASSWORD", None)
+
+    def write(self, mode, text="hunter2\n"):
+        self.path.write_text(text)
+        os.chmod(self.path, mode)
+
+    def refusal(self):
+        with self.assertRaises(config.ConfigError) as caught:
+            config.read_password(self.cfg)
+        return str(caught.exception)
+
+    def test_a_file_only_its_owner_can_open_is_read(self):
+        self.write(0o600)
+        self.assertEqual(config.read_password(self.cfg), "hunter2")
+
+    def test_a_file_others_can_read_is_refused(self):
+        self.write(0o644)
+        self.assertIn(f"chmod 600 {self.path}", self.refusal())
+
+    # Write alone is enough to refuse: whoever can rewrite the file decides
+    # what the sync sends to the server as the password.
+    def test_any_access_for_group_or_others_is_refused(self):
+        for mode in (0o640, 0o620, 0o604, 0o602, 0o610):
+            with self.subTest(mode=oct(mode)):
+                self.write(mode)
+                self.assertIn(f"{mode:04o}", self.refusal())
+
+    def test_a_symlink_is_refused_even_to_a_private_file(self):
+        target = Path(self.tmp.name) / "real.password"
+        target.write_text("hunter2\n")
+        os.chmod(target, 0o600)
+        self.path.symlink_to(target)
+        self.assertIn("symbolic link", self.refusal())
+
+    def test_a_file_that_belongs_to_someone_else_is_refused(self):
+        self.write(0o600)
+        with mock.patch.object(config.os, "geteuid", return_value=os.geteuid() + 1):
+            self.assertIn("another user", self.refusal())
+
+    def test_a_directory_is_refused_as_a_config_error(self):
+        self.path.mkdir()
+        self.assertIn("not a regular file", self.refusal())
+
+    def test_a_fifo_is_refused_rather_than_waited_on(self):
+        os.mkfifo(self.path, 0o600)
+
+        # A blocking open would wait forever for a writer that never comes.
+        # The alarm turns that hang into a failure instead of a stuck suite.
+        def hung(signum, frame):
+            raise AssertionError("opening the password file blocked on a FIFO")
+
+        previous = signal.signal(signal.SIGALRM, hung)
+        signal.alarm(5)
+        try:
+            self.assertIn("not a regular file", self.refusal())
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous)
+
+    def test_a_missing_file_says_how_to_supply_the_password(self):
+        self.assertIn("OMARCHY_CALDAV_PASSWORD", self.refusal())
+
+    def test_the_environment_wins_and_the_file_is_not_consulted(self):
+        self.write(0o644, "from the file\n")
+        os.environ["OMARCHY_CALDAV_PASSWORD"] = "from the environment"
+        self.assertEqual(config.read_password(self.cfg), "from the environment")
 
 
 if __name__ == "__main__":
