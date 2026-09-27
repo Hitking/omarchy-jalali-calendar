@@ -1,5 +1,17 @@
 # تغییرات / Changelog
 
+## 0.4.1 — ۵ مهر ۱۴۰۵ / 2026-09-27
+
+**برای کاربران**
+
+- امروز در جدول دوباره فقط یک قاب دورِ عدد دارد؛ خانهٔ پُررنگِ ۰٫۴٫۰ بیش از
+  حد به چشم می‌آمد. دکمهٔ «امروز» سر جایش است.
+
+**For reviewers**
+
+- Panel: today's grid cell is outlined again instead of filled (reverts that
+  part of 0.4.0); the day number keeps the normal colour and stays bold.
+
 ## 0.4.0 — ۵ مهر ۱۴۰۵ / 2026-09-27
 
 **برای کاربران**

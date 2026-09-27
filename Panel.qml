@@ -1326,15 +1326,14 @@ Panel {
                       width: root.cellWidth
                       height: root.cellHeight
                       radius: Style.cornerRadius
-                      // Today is the one solid block on the grid, so it is
-                      // found at a glance from anywhere in the month. Any
-                      // other selected day gets a faint wash, which can
-                      // never be mistaken for it.
-                      color: modelData.today
-                        ? Style.selectedStateColor(root.contentForeground, Color.accent)
-                        : dayCell.selected
-                          ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
-                          : "transparent"
+                      // Today is outlined, not filled: a lit-up block shouts
+                      // over a grid this quiet. The selected day gets a faint
+                      // wash instead, so the two marks never compete.
+                      color: dayCell.selected
+                        ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
+                        : "transparent"
+                      border.width: modelData.today ? Style.spacing.hairline : 0
+                      border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
 
                       Text {
                         id: dayNumber
@@ -1344,11 +1343,9 @@ Panel {
                         // shift under the cursor.
                         anchors.verticalCenterOffset: modelData.hasEvent ? -Style.space(3) : 0
                         text: root.num(modelData.civilDay)
-                        color: modelData.today
-                          ? Color.popups.background
-                          : modelData.inMonth
-                            ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
-                            : Qt.darker(root.contentForeground, 2.2)
+                        color: modelData.inMonth
+                          ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
+                          : Qt.darker(root.contentForeground, 2.2)
                         font.family: root.contentFontFamily
                         font.pixelSize: Style.font.body
                         font.bold: modelData.today
