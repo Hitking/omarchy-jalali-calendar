@@ -88,6 +88,7 @@ Panel {
   property int viewMonth: todayCivil.month
 
   readonly property bool viewingCurrentMonth: viewYear === todayCivil.year && viewMonth === todayCivil.month
+  readonly property bool atToday: viewingCurrentMonth && selectedDayKey === todayKey
 
   // Switching calendars renames the month underfoot, so the view has to be
   // re-derived rather than left holding a number that means something else
@@ -474,9 +475,12 @@ Panel {
     root.goToToday()
   }
 
+  // Home is the month *and* the day. Bringing the grid back while the agenda
+  // below it still lists some day a year out is only half a way back.
   function goToToday() {
     root.viewYear = root.todayCivil.year
     root.viewMonth = root.todayCivil.month
+    root.selectedDayKey = root.todayKey
   }
 
   function moveMonth(delta) {
@@ -755,8 +759,10 @@ Panel {
       root.nowTick = clock.date
       if (Model.keyForDate(clock.date) === String(root.todayKey)) return
       var followToday = root.viewingCurrentMonth
+      var followSelection = root.selectedDayKey === root.todayKey
       root.today = clock.date
       if (followToday) root.goToToday()
+      else if (followSelection) root.selectedDayKey = root.todayKey
     }
   }
 
@@ -948,7 +954,7 @@ Panel {
               y: heroRow.y
               width: heroRow.width
               height: heroRow.height
-              enabled: !root.viewingCurrentMonth
+              enabled: !root.atToday
               hoverEnabled: enabled
               cursorShape: Qt.PointingHandCursor
               onClicked: root.goToToday()
@@ -1320,14 +1326,15 @@ Panel {
                       width: root.cellWidth
                       height: root.cellHeight
                       radius: Style.cornerRadius
-                      // Today is outlined, not filled: a lit-up block shouts
-                      // over a grid this quiet. The selected day gets a faint
-                      // wash instead, so the two marks never compete.
-                      color: dayCell.selected
-                        ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
-                        : "transparent"
-                      border.width: modelData.today ? Style.spacing.hairline : 0
-                      border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
+                      // Today is the one solid block on the grid, so it is
+                      // found at a glance from anywhere in the month. Any
+                      // other selected day gets a faint wash, which can
+                      // never be mistaken for it.
+                      color: modelData.today
+                        ? Style.selectedStateColor(root.contentForeground, Color.accent)
+                        : dayCell.selected
+                          ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
+                          : "transparent"
 
                       Text {
                         id: dayNumber
@@ -1337,9 +1344,11 @@ Panel {
                         // shift under the cursor.
                         anchors.verticalCenterOffset: modelData.hasEvent ? -Style.space(3) : 0
                         text: root.num(modelData.civilDay)
-                        color: modelData.inMonth
-                          ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
-                          : Qt.darker(root.contentForeground, 2.2)
+                        color: modelData.today
+                          ? Color.popups.background
+                          : modelData.inMonth
+                            ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
+                            : Qt.darker(root.contentForeground, 2.2)
                         font.family: root.contentFontFamily
                         font.pixelSize: Style.font.body
                         font.bold: modelData.today
@@ -1427,6 +1436,55 @@ Panel {
                 font.pixelSize: Style.font.body
               }
 
+              // The way home from wherever the grid and the selection have
+              // wandered. Beside the month name rather than in place of it,
+              // and anchored off it, so appearing never moves the label or
+              // the chevrons. Hidden while there is nowhere to go back to.
+              Rectangle {
+                id: todayButton
+                visible: !root.atToday
+                anchors.left: monthLabel.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: todayLabel.implicitWidth + Style.space(14)
+                height: todayLabel.implicitHeight + Style.space(6)
+                radius: height / 2
+                color: todayHover.hovered
+                  ? Style.hoverFillFor(root.contentForeground, Color.accent)
+                  : "transparent"
+                border.width: Style.spacing.hairline
+                border.color: todayHover.hovered
+                  ? "transparent"
+                  : Style.selectedStateColor(root.contentForeground, Color.accent)
+
+                HoverHandler {
+                  id: todayHover
+                  cursorShape: Qt.PointingHandCursor
+                }
+
+                TapHandler {
+                  gesturePolicy: TapHandler.ReleaseWithinBounds
+                  onTapped: root.goToToday()
+                }
+
+                Text {
+                  id: todayLabel
+                  anchors.centerIn: parent
+                  text: root.t("todayButton")
+                  color: todayHover.hovered
+                    ? Style.hoverStateColor(root.contentForeground, Color.accent)
+                    : Style.selectedStateColor(root.contentForeground, Color.accent)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+
+                PanelToolTip {
+                  visible: todayHover.hovered
+                  text: root.t("backToToday")
+                  fontFamily: root.contentFontFamily
+                }
+              }
+
               PanelActionButton {
                 // Pulled out by the button's own padding so the glyph, not
                 // its hit box, lines up with the year on the rail above.
@@ -1469,7 +1527,8 @@ Panel {
 
             Text {
               width: parent.width
-              text: root.formatDate(root.selectedDate, "dddd d MMMM")
+              text: root.formatDate(root.selectedDate,
+                Model.dayHeadingPattern(root.calendar, root.selectedDate, root.today))
               color: Qt.darker(root.contentForeground, 1.4)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption

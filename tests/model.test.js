@@ -543,3 +543,23 @@ test('commandPathFromUrl does not shorten a home-lookalike prefix', () => {
     '/home/tmn2/plugin/sync/setup'
   )
 })
+
+test('the agenda heading names the year once the day is in another one', () => {
+  // 5 Mehr 1406 is a Monday; 5 Mehr 1405 is a Sunday. Without the year the
+  // two headings differ only in the weekday, which reads as a wrong weekday.
+  const today = new Date(2026, 8, 27)
+  const nextYear = new Date(2027, 8, 27)
+  const pattern = Model.dayHeadingPattern(Model.JALALI, nextYear, today)
+  assert.equal(pattern, 'dddd d MMMM yyyy')
+  assert.equal(Model.format(nextYear, pattern, { calendar: Model.JALALI }), 'دوشنبه ۵ مهر ۱۴۰۶')
+  assert.equal(Model.format(today, Model.dayHeadingPattern(Model.JALALI, today, today), { calendar: Model.JALALI }), 'یکشنبه ۵ مهر')
+})
+
+test('the agenda heading goes by the calendar on screen, not the Gregorian year', () => {
+  // 1 Farvardin 1405 is in 2026; 10 Dey 1404 is also in 2026 but a Jalali
+  // year earlier, so it needs its year under Jalali and not under Gregorian.
+  const today = new Date(2026, 2, 21)
+  const dey = new Date(2026, 0, 1)
+  assert.equal(Model.dayHeadingPattern(Model.JALALI, dey, today), 'dddd d MMMM yyyy')
+  assert.equal(Model.dayHeadingPattern(Model.GREGORIAN, dey, today), 'dddd d MMMM')
+})

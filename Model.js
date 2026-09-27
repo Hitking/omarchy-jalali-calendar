@@ -506,6 +506,7 @@ STRINGS[JALALI] = {
   settings: "تنظیمات",
   backToCalendar: "بازگشت به تقویم",
   backToToday: "بازگشت به امروز",
+  todayButton: "امروز",
   nothingElseToday: "امروز رویداد دیگری نیست",
   born: "متولد",
   yearPlaceholder: "سال",
@@ -600,6 +601,7 @@ STRINGS[GREGORIAN] = {
   settings: "Settings",
   backToCalendar: "Back to calendar",
   backToToday: "Back to today",
+  todayButton: "Today",
   nothingElseToday: "Nothing else today",
   born: "BORN",
   yearPlaceholder: "year",
@@ -1112,6 +1114,19 @@ function birthYearToStorage(displayedYear, calendar) {
   var year = Math.round(Number(displayedYear))
   if (!isFinite(year) || year <= 0) return 0
   return isJalali(calendar) ? year + ERA_OFFSET : year
+}
+
+// ---- The agenda's heading.
+//
+// Day, date and month, and the year too once the selected day is not in this
+// year. Without it, 5 Mehr of next year reads as today with the wrong weekday
+// -- "دوشنبه ۵ مهر" on a Sunday -- because the only part of the heading that
+// differs between the two is the weekday.
+function dayHeadingPattern(calendar, date, today) {
+  var day = fromDate(calendar, date)
+  var now = fromDate(calendar, today)
+  if (day && now && day.year !== now.year) return "dddd d MMMM yyyy"
+  return "dddd d MMMM"
 }
 
 // ---- The month grid.
@@ -1731,6 +1746,7 @@ if (typeof module !== "undefined") {
     calendarsInDocument: calendarsInDocument,
     nextEvent: nextEvent,
     nextEventToday: nextEventToday,
+    dayHeadingPattern: dayHeadingPattern,
     formatCountdown: formatCountdown,
     truncateTitle: truncateTitle,
     announceLabel: announceLabel,
