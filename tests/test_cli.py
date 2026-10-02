@@ -6,9 +6,10 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 from zoneinfo import ZoneInfo
 
-from omarchy_calendar_sync import cli, config, contract, gws
+from omarchy_calendar_sync import cli, config, contract, gws, normalize
 
 BOGOTA = ZoneInfo("America/Bogota")
 NOW = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
@@ -138,6 +139,25 @@ class TestRun(unittest.TestCase):
             )
             self.assertEqual(code, 1)
             self.assertFalse(out.exists())
+
+    def test_row_limit_across_calendars_preserves_previous_file(self):
+        calendars = [
+            {"id": "a", "name": "A", "color": "#f83a22"},
+            {"id": "b", "name": "B", "color": "#f83a22"},
+        ]
+        event = {
+            "id": "evt1", "summary": "Event",
+            "start": {"dateTime": "2026-08-10T09:00:00-05:00"},
+            "end": {"dateTime": "2026-08-10T10:00:00-05:00"},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out.json"
+            out.write_text("previous")
+            with mock.patch.object(normalize, "MAX_OUTPUT_ROWS", 1):
+                code = cli.run(FakeGws(calendars=calendars, events=[event]),
+                               config.DEFAULTS, NOW, out, BOGOTA)
+            self.assertEqual(code, 1)
+            self.assertEqual(out.read_text(), "previous")
 
 
 class TestResolveLocalTimezone(unittest.TestCase):

@@ -163,11 +163,16 @@ def run_caldav(client, cfg, now, out_path, local_tz):
                     occurrences = ics.expand(event, window_start, window_end)
                     rows.extend(
                         normalize.normalize_occurrences(
-                            event, occurrences, calendar, local_tz, account
+                            event, occurrences, calendar, local_tz, account,
+                            window_start=window_start, window_end=window_end,
+                            max_rows=normalize.MAX_OUTPUT_ROWS - len(rows),
                         )
                     )
 
         source = "caldav/" + _host_of(cfg["caldav"]["url"])
+    except normalize.RowLimitError as error:
+        print(f"sync failed: {error}; keeping the previous events file", file=sys.stderr)
+        return EXIT_SYNC_FAILED
     except CalDavError as error:
         print(f"sync failed: {error}", file=sys.stderr)
         print(
@@ -210,15 +215,24 @@ def run(client, cfg, now, out_path, local_tz):
         client.check()
         calendars = config_module.select_calendars(client.calendars(), cfg)
         time_min, time_max = config_module.window_bounds(cfg, now)
+        window_start = datetime.fromisoformat(time_min)
+        window_end = datetime.fromisoformat(time_max)
 
         rows = []
         seen = set()
         for calendar in calendars:
             raw = client.events(calendar["id"], time_min, time_max)
             fresh = _drop_duplicates(raw, seen)
-            rows.extend(normalize.normalize_all(fresh, calendar, local_tz))
+            rows.extend(normalize.normalize_all(
+                fresh, calendar, local_tz, window_start=window_start,
+                window_end=window_end,
+                max_rows=normalize.MAX_OUTPUT_ROWS - len(rows),
+            ))
 
         source = "gws/" + ".".join(str(part) for part in client.version())
+    except normalize.RowLimitError as error:
+        print(f"sync failed: {error}; keeping the previous events file", file=sys.stderr)
+        return EXIT_SYNC_FAILED
     except GwsError as error:
         print(f"sync failed: {error}", file=sys.stderr)
         print(

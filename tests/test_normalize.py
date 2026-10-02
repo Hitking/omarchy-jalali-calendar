@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from omarchy_calendar_sync import normalize
@@ -172,6 +173,31 @@ class TestNormalizeAll(unittest.TestCase):
         ]
         rows = normalize.normalize_all(events, CAL, BOGOTA)
         self.assertEqual(len(rows), 3)
+
+    def test_a_far_future_end_is_clipped_before_rows_are_built(self):
+        event = all_day("2026-08-10", "9998-01-01")
+        rows = normalize.normalize_event(
+            event, CAL, BOGOTA,
+            window_start=datetime(2026, 8, 10, tzinfo=BOGOTA),
+            window_end=datetime(2026, 8, 12, tzinfo=BOGOTA),
+            max_rows=3,
+        )
+        self.assertEqual([row["dateKey"] for row in rows],
+                         ["2026-08-10", "2026-08-11", "2026-08-12"])
+        self.assertEqual(rows[0]["end"], "9998-01-01T00:00:00-05:00")
+
+    def test_rows_are_counted_before_an_unbounded_event_is_allocated(self):
+        with self.assertRaises(normalize.RowLimitError):
+            normalize.normalize_event(
+                all_day("2026-08-10", "9998-01-01"), CAL, BOGOTA,
+                max_rows=3,
+            )
+
+    def test_output_budget_covers_all_google_events(self):
+        events = [all_day("2026-08-10", "2026-08-12"),
+                  all_day("2026-08-12", "2026-08-14")]
+        with self.assertRaises(normalize.RowLimitError):
+            normalize.normalize_all(events, CAL, BOGOTA, max_rows=3)
 
 
 if __name__ == "__main__":

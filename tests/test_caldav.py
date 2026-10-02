@@ -8,6 +8,7 @@ places a CalDAV client actually goes wrong.
 import unittest
 import urllib.error
 from datetime import datetime, timezone
+from unittest import mock
 
 from omarchy_calendar_sync.caldav import (
     CalDav, CalDavAuthError, CalDavError, CalDavOriginError)
@@ -482,6 +483,33 @@ class RunCalDavTests(unittest.TestCase):
         self.assertEqual([row["dateKey"] for row in doc["events"]],
                          ["2026-08-30", "2026-08-31", "2026-09-01"])
         self.assertTrue(doc["source"].startswith("caldav/mail.example.com"))
+
+    def test_far_future_dtend_only_writes_days_in_the_window(self):
+        data = ("BEGIN:VCALENDAR&#13;\nBEGIN:VEVENT&#13;\n"
+                "UID:long@example.com&#13;\nSUMMARY:Long event&#13;\n"
+                "DTSTART;TZID=Asia/Tehran:20260825T090000&#13;\n"
+                "DTEND;TZID=Asia/Tehran:99980101T090000&#13;\n"
+                "END:VEVENT&#13;\nEND:VCALENDAR")
+        code, doc = self.run_sync(data)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(doc["events"]), 61)
+        self.assertEqual(doc["events"][0]["dateKey"], "2026-08-25")
+        self.assertEqual(doc["events"][-1]["dateKey"], "2026-10-24")
+
+    def test_row_limit_across_caldav_events_refuses_to_write(self):
+        from omarchy_calendar_sync import normalize
+
+        data = ("BEGIN:VCALENDAR&#13;\n"
+                "BEGIN:VEVENT&#13;\nUID:one&#13;\n"
+                "DTSTART;TZID=Asia/Tehran:20260830T090000&#13;\n"
+                "END:VEVENT&#13;\n"
+                "BEGIN:VEVENT&#13;\nUID:two&#13;\n"
+                "DTSTART;TZID=Asia/Tehran:20260831T090000&#13;\n"
+                "END:VEVENT&#13;\nEND:VCALENDAR")
+        with mock.patch.object(normalize, "MAX_OUTPUT_ROWS", 1):
+            code, doc = self.run_sync(data)
+        self.assertEqual(code, 1)
+        self.assertIsNone(doc)
 
     # The file the widget reads is a contract, and a source that wrote an
     # invalid one would be a source the widget renders as an empty month.

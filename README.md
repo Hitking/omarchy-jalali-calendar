@@ -319,6 +319,10 @@ password manager دارید، آن فایل را پاک کنید و `OMARCHY_CAL
 نام منطقهٔ زمانی ویندوزی که سرورهای هم‌خانوادهٔ Exchange می‌فرستند — مثل
 `Iran Standard Time` — به IANA ترجمه می‌شود.
 
+ردیف‌های رویداد چندروزه فقط برای روزهای پنجرهٔ همگام‌سازی ساخته می‌شوند.
+اگر مجموع ردیف‌های همهٔ تقویم‌ها از ۲۰٬۰۰۰ بگذرد، همگام‌سازی با خطا متوقف
+می‌شود و فایل رویدادهای قبلی دست‌نخورده می‌ماند.
+
 ## همگام‌سازی گوگل کلندر
 
 ```bash
@@ -429,6 +433,10 @@ Fastmail, iCloud. The CalDAV client does its own
 discovery, expands recurrence rules, and translates the Windows timezone
 names Exchange-lineage servers emit. Standard library only, like the rest of
 the sync.
+
+Multi-day events produce rows only inside the sync window. If all calendars
+together would exceed 20,000 rows, the sync stops and keeps the previous
+events file.
 
 **CalDAV connects from the widget itself** -- click the clock, then the gear,
 then CALENDAR ACCOUNT: a server URL, a username, a password, and a button.

@@ -274,6 +274,36 @@ class NormalizeOccurrenceTests(unittest.TestCase):
                          ["2026-08-30", "2026-08-31", "2026-09-01"])
         self.assertEqual(len({r["id"] for r in rows}), 1, "one event, one id")
 
+    def test_far_future_dtend_is_clipped_to_the_sync_window(self):
+        found = ics.read_calendar(event(
+            "UID:long", "DTSTART;TZID=Asia/Tehran:20260830T090000",
+            "DTEND;TZID=Asia/Tehran:99980101T090000"
+        ), TEHRAN)[0]
+        window_start = datetime(2026, 8, 29, tzinfo=TEHRAN)
+        window_end = datetime(2026, 9, 1, tzinfo=TEHRAN)
+        rows = normalize.normalize_occurrences(
+            found, ics.expand(found, window_start, window_end), CALENDAR,
+            TEHRAN, window_start=window_start, window_end=window_end,
+            max_rows=3,
+        )
+        self.assertEqual([row["dateKey"] for row in rows],
+                         ["2026-08-30", "2026-08-31", "2026-09-01"])
+        self.assertTrue(rows[0]["end"].startswith("9998-01-01"))
+
+    def test_output_budget_covers_all_occurrences(self):
+        found = ics.read_calendar(event(
+            "UID:daily", "DTSTART;TZID=Asia/Tehran:20260830T090000",
+            "RRULE:FREQ=DAILY;COUNT=3"
+        ), TEHRAN)[0]
+        window_start = datetime(2026, 8, 29, tzinfo=TEHRAN)
+        window_end = datetime(2026, 9, 2, tzinfo=TEHRAN)
+        with self.assertRaises(normalize.RowLimitError):
+            normalize.normalize_occurrences(
+                found, ics.expand(found, window_start, window_end),
+                CALENDAR, TEHRAN, window_start=window_start,
+                window_end=window_end, max_rows=2,
+            )
+
     def test_every_instance_of_a_series_gets_its_own_id(self):
         rows = self.rows("DTSTART;TZID=Asia/Tehran:20260830T090000",
                          "RRULE:FREQ=DAILY;COUNT=3")

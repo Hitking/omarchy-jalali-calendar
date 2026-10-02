@@ -15,6 +15,13 @@ import re
 from datetime import date, datetime, time, timedelta
 
 NO_TITLE = "(no title)"
+# One budget for every event and calendar in a sync, checked before day rows
+# are allocated. A server-supplied DTEND may be thousands of years away.
+MAX_OUTPUT_ROWS = 20_000
+
+
+class RowLimitError(ValueError):
+    """The sync would produce more rows than the output budget allows."""
 
 
 def _https_only(value):
@@ -61,15 +68,20 @@ def _response_status(gevent):
     return ""
 
 
-def normalize_all(gevents, calendar, tz):
+def normalize_all(gevents, calendar, tz, *, window_start=None, window_end=None,
+                  max_rows=MAX_OUTPUT_ROWS):
     """Normalize a list of Google events, flattening the per-day rows."""
     rows = []
     for gevent in gevents:
-        rows.extend(normalize_event(gevent, calendar, tz))
+        rows.extend(normalize_event(
+            gevent, calendar, tz, window_start=window_start,
+            window_end=window_end, max_rows=max_rows - len(rows)
+        ))
     return rows
 
 
-def normalize_event(gevent, calendar, tz):
+def normalize_event(gevent, calendar, tz, *, window_start=None, window_end=None,
+                    max_rows=MAX_OUTPUT_ROWS):
     """Return one contract row per local day this event covers.
 
     Rows produced from a single Google event share its id, so consumers must
@@ -122,6 +134,9 @@ def normalize_event(gevent, calendar, tz):
         response_status=response_status,
         start_iso=start_iso,
         end_iso=end_iso,
+        window_start=window_start,
+        window_end=window_end,
+        max_rows=max_rows,
     )
 
 
@@ -140,6 +155,9 @@ def rows_for_occurrence(
     response_status="",
     start_iso=None,
     end_iso=None,
+    window_start=None,
+    window_end=None,
+    max_rows=MAX_OUTPUT_ROWS,
 ):
     """One contract row per local day a single occurrence covers.
 
@@ -163,7 +181,9 @@ def rows_for_occurrence(
             "eventType": event_type,
             "responseStatus": response_status,
         }
-        for day in _covered_days(start_dt, end_dt, all_day)
+        for day in _covered_days(
+            start_dt, end_dt, all_day, window_start, window_end, max_rows
+        )
     ]
 
 
@@ -181,8 +201,8 @@ def _parse_endpoint(node, tz):
     return parsed_dt.astimezone(tz), False
 
 
-def _covered_days(start_dt, end_dt, all_day):
-    """Inclusive list of local dates the event occupies."""
+def _covered_days(start_dt, end_dt, all_day, window_start, window_end, max_rows):
+    """Yield local dates after clipping and checking the row budget."""
     first = start_dt.date()
 
     if all_day:
@@ -197,12 +217,19 @@ def _covered_days(start_dt, end_dt, all_day):
     if last < first:
         last = first
 
-    days = []
-    cursor = first
-    while cursor <= last:
-        days.append(cursor)
-        cursor += timedelta(days=1)
-    return days
+    if window_start is not None:
+        first = max(first, window_start.astimezone(start_dt.tzinfo).date())
+    if window_end is not None:
+        last = min(last, window_end.astimezone(start_dt.tzinfo).date())
+    if last < first:
+        return iter(())
+
+    count = last.toordinal() - first.toordinal() + 1
+    if count > max_rows:
+        raise RowLimitError(f"event row limit exceeded ({MAX_OUTPUT_ROWS})")
+    return (date.fromordinal(day) for day in range(
+        first.toordinal(), last.toordinal() + 1
+    ))
 
 
 # ---- The iCalendar side: CalDAV, so any server that speaks the standard.
@@ -267,7 +294,9 @@ def _ics_response_status(event, account_address):
     return ""
 
 
-def normalize_occurrences(event, occurrences, calendar, tz, account_address=""):
+def normalize_occurrences(event, occurrences, calendar, tz, account_address="",
+                          *, window_start=None, window_end=None,
+                          max_rows=MAX_OUTPUT_ROWS):
     """Contract rows for every expanded occurrence of one iCalendar event."""
     if str(event.get("status", "")).upper() == "CANCELLED":
         return []
@@ -310,6 +339,9 @@ def normalize_occurrences(event, occurrences, calendar, tz, account_address=""):
                 meeting_url=meeting_url,
                 event_url=event_url,
                 response_status=response_status,
+                window_start=window_start,
+                window_end=window_end,
+                max_rows=max_rows - len(rows),
             )
         )
     return rows
