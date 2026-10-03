@@ -87,6 +87,14 @@ class ConnectHarness(unittest.TestCase):
     def config(self):
         return json.loads(self.config_path.read_text())
 
+    @property
+    def password_path(self):
+        return self.home / "caldav.password"
+
+    def leftovers(self):
+        """Hidden files beside the password: a temporary copy left behind."""
+        return sorted(p.name for p in self.home.iterdir() if p.name.startswith("."))
+
 
 class TestHappyPath(ConnectHarness):
     def test_reports_the_calendars_it_found(self):
@@ -233,6 +241,96 @@ class TestStoredPassword(ConnectHarness):
         )
         self.assertEqual(result["passwordFile"], str(stored))
         self.assertEqual(stored.read_text().strip(), "hunter2")
+
+    # Kept is not the same as trusted. The sync refuses a file other users can
+    # open, so the connect must not quietly send one to a server either.
+    def test_a_stored_password_others_can_read_is_refused_before_it_is_sent(self):
+        self.password_path.write_text("hunter2\n")
+        os.chmod(self.password_path, 0o644)
+        FakeClient.last = None
+
+        with self.assertRaises(connect.ConnectError) as caught:
+            self.connect(dict(REQUEST, password=""))
+
+        self.assertEqual(caught.exception.stage, connect.STAGE_PASSWORD)
+        self.assertIn(f"chmod 600 {self.password_path}", caught.exception.message)
+        self.assertIsNone(FakeClient.last)
+        self.assertFalse(self.config_path.exists())
+
+    def test_a_stored_password_behind_a_symlink_is_refused(self):
+        target = self.home / "elsewhere.password"
+        target.write_text("hunter2\n")
+        os.chmod(target, 0o600)
+        self.password_path.symlink_to(target)
+        FakeClient.last = None
+
+        with self.assertRaises(connect.ConnectError) as caught:
+            self.connect(dict(REQUEST, password=""))
+
+        self.assertEqual(caught.exception.stage, connect.STAGE_PASSWORD)
+        self.assertIn("symbolic link", caught.exception.message)
+        self.assertIsNone(FakeClient.last)
+
+
+class TestThePasswordNeverLandsSomewhereOthersCanRead(ConnectHarness):
+    """Whatever is already at the name -- a link, a loose file, a reader
+    holding that file open -- the new password goes into none of it."""
+
+    def test_a_symlink_at_the_name_is_refused_and_its_target_left_alone(self):
+        target = self.home / "somewhere-else"
+        target.write_text("not a password\n")
+        self.password_path.symlink_to(target)
+
+        with self.assertRaises(connect.ConnectError) as caught:
+            self.connect()
+
+        self.assertEqual(caught.exception.stage, connect.STAGE_PASSWORD)
+        self.assertIn("symbolic link", caught.exception.message)
+        self.assertEqual(target.read_text(), "not a password\n")
+        self.assertTrue(self.password_path.is_symlink())
+        self.assertFalse(self.config_path.exists())
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_dangling_symlink_does_not_create_what_it_points_at(self):
+        target = self.home / "made-through-the-link"
+        self.password_path.symlink_to(target)
+
+        with self.assertRaises(connect.ConnectError):
+            self.connect()
+
+        self.assertFalse(target.exists())
+
+    def test_a_loose_file_already_there_never_holds_the_new_password(self):
+        self.password_path.write_text("old\n")
+        os.chmod(self.password_path, 0o644)
+
+        # Opened while the mode allowed it. A reader like this keeps its access
+        # whatever the mode becomes afterwards, so tightening the mode after
+        # the write -- or before it -- would still hand it the new password.
+        # Only a write that never lands in this file keeps it out.
+        with open(self.password_path) as already_open:
+            self.connect()
+            self.assertEqual(already_open.read(), "old\n")
+
+        self.assertEqual(self.password_path.read_text(), "hunter2\n")
+        self.assertEqual(stat.S_IMODE(self.password_path.stat().st_mode), 0o600)
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_failed_write_leaves_no_copy_of_the_password_behind(self):
+        self.password_path.mkdir()
+
+        with self.assertRaises(connect.ConnectError) as caught:
+            self.connect()
+
+        self.assertEqual(caught.exception.stage, connect.STAGE_PASSWORD)
+        self.assertEqual(self.leftovers(), [])
+        self.assertFalse(self.config_path.exists())
+
+    def test_what_it_writes_is_what_the_sync_reads(self):
+        from omarchy_calendar_sync import config as config_module
+
+        self.connect()
+        self.assertEqual(config_module.read_password_file(self.password_path), "hunter2")
 
 
 class TestPartialFailuresAreReportedNotRaised(ConnectHarness):

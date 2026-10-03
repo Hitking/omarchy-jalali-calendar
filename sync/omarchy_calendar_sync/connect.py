@@ -19,6 +19,7 @@ debug a week later.
 import json
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from . import config as config_module
@@ -129,15 +130,18 @@ def _resolve_password(request, password_path):
     The panel cannot show a password it never had, so it sends the field
     blank when the user only changed the URL. Treating blank as "erase the
     password" would break a working sync on an edit that never mentioned it.
+
+    The stored one is read by the same rules the sync reads it by, so a file
+    the sync would refuse is refused here too -- before it goes to a server.
     """
     password = request.get("password")
     if password:
         return str(password)
 
     try:
-        stored = password_path.read_text().strip() if password_path.exists() else ""
-    except OSError as error:
-        raise ConnectError(STAGE_PASSWORD, f"cannot read {password_path}: {error}") from error
+        stored = config_module.read_password_file(password_path)
+    except config_module.ConfigError as error:
+        raise ConnectError(STAGE_PASSWORD, str(error)) from error
 
     if not stored:
         raise ConnectError(STAGE_INPUT, "a password is required")
@@ -161,17 +165,41 @@ def _verified_calendars(client):
 
 
 def _write_password(path, password):
-    """Written through a mode the rest of the machine cannot read.
+    """Put the password where only this user can read it, in one step.
 
-    Created empty at 0600 before a byte goes in, so the password is never
-    briefly on disk as world-readable.
+    It goes into a new file, created at 0600 beside the real one, which then
+    takes the real one's name in a single rename. A rename replaces a name and
+    never writes through it, so the password is never inside a file anyone
+    else can open: not an existing file whose loose mode would only be
+    tightened after the write, not wherever a symlink at the name points, and
+    not a file another process already holds open -- that process keeps the
+    old contents, never the new.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        handle = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle, "w") as stream:
-            stream.write(password.rstrip("\n") + "\n")
-        os.chmod(str(path), 0o600)
+        # Refused rather than replaced. A link here is somebody else's doing or
+        # the user keeping the password elsewhere on purpose, and neither should
+        # be quietly undone. The rename is what makes a link harmless, even one
+        # that appears after this check; the check only makes it visible.
+        if path.is_symlink():
+            raise ConnectError(
+                STAGE_PASSWORD,
+                f"{path} is a symbolic link; the password has to be in a plain file",
+            )
+        handle, temp_name = tempfile.mkstemp(
+            dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                # mkstemp asks for 0600 through the umask; this is 0600 exactly.
+                os.fchmod(stream.fileno(), 0o600)
+                stream.write(password.rstrip("\n") + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temp_name, path)
+        except BaseException:
+            Path(temp_name).unlink(missing_ok=True)
+            raise
     except OSError as error:
         raise ConnectError(STAGE_PASSWORD, f"cannot write {path}: {error}") from error
 
